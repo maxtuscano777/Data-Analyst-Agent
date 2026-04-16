@@ -1,68 +1,221 @@
-"""Pydantic output schemas for ADAW agents.
+"""Pydantic output schemas and LangGraph AgentState for ADAW.
 
-All inter-agent data transfer is validated through these models to enforce
-strict contracts between LangGraph nodes.
+Architecture: Planner-Executor (Supervisor) pattern.
+  - Chief Planner  → ExecutionPlan
+  - Data Engineer  → CleaningResult
+  - Statistical Analyst → AnalysisResult
+  - Executive Presenter → PresentationResult
+  - Shared graph state  → AgentState (TypedDict)
+
+All inter-agent data transfer is validated through Pydantic models to enforce
+strict contracts. AgentState is a TypedDict (not BaseModel) so LangGraph can
+apply Annotated reducers (e.g. add_messages) correctly.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
-from pydantic import BaseModel, Field
+from typing import Annotated, Any, Optional
+from typing_extensions import TypedDict
 
+from pydantic import BaseModel, Field
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
+
+
+# ── Agent 1 Output: Chief Planner ─────────────────────────────────────────────
+
+class ExecutionPlan(BaseModel):
+    """Structured output from the Chief Planner (Agent 1).
+
+    The Planner reads the User's Business Goal and the Data Profile JSON,
+    then produces an ordered, unambiguous plan for the downstream executor
+    agents. It never sees the raw CSV and never writes code.
+    """
+
+    cleaning_steps: list[str] = Field(
+        ...,
+        description=(
+            "Ordered list of data-cleaning operations for the Data Engineer to execute. "
+            "Each step must be a self-contained, unambiguous instruction "
+            "(e.g. 'Drop columns where null percentage exceeds 50%', "
+            "'Parse the date column as datetime64[ns]', "
+            "'Fill missing values in numeric columns with the column median')."
+        ),
+        min_length=1,
+    )
+    analysis_steps: list[str] = Field(
+        ...,
+        description=(
+            "Ordered list of EDA and modelling operations for the Statistical Analyst to execute. "
+            "Each step must be self-contained and analytically precise "
+            "(e.g. 'Compute the Pearson correlation matrix for all numeric columns', "
+            "'Fit a LinearRegression and a DecisionTreeRegressor on target column revenue; "
+            "evaluate both with cross_val_score(cv=5, scoring=r2) and report mean ± std')."
+        ),
+        min_length=1,
+    )
+
+
+# ── Agent 2 Output: Data Engineer ─────────────────────────────────────────────
 
 class CleaningResult(BaseModel):
-    """Output schema for Agent 1 — The Data Engineer."""
+    """Output schema for Agent 2 — The Data Engineer."""
 
-    cleaned_csv_path: str = Field(..., description="Absolute path to the cleaned CSV file in /uploads.")
-    rows_before: int = Field(..., description="Row count before cleaning.")
-    rows_after: int = Field(..., description="Row count after cleaning.")
-    columns_dropped: list[str] = Field(default_factory=list, description="Column names that were dropped.")
+    cleaned_csv_path: str = Field(
+        ...,
+        description="Absolute path to the cleaned CSV file saved in /uploads (stem + '_cleaned' suffix).",
+    )
+    rows_before: int = Field(..., description="Row count before cleaning.", ge=0)
+    rows_after: int = Field(..., description="Row count after cleaning.", ge=0)
+    columns_dropped: list[str] = Field(
+        default_factory=list,
+        description="Names of columns removed during cleaning.",
+    )
     dtype_corrections: dict[str, str] = Field(
         default_factory=dict,
-        description="Map of column name → new dtype (e.g. {'date': 'datetime64[ns]'}).",
+        description="Map of column name → new dtype string (e.g. {'order_date': 'datetime64[ns]'}).",
     )
-    execution_log: str = Field("", description="Raw Python REPL output captured during cleaning.")
+    execution_log: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Raw Python REPL stdout lines captured during cleaning, one entry per tool call. "
+            "Used for line-by-line WebSocket streaming to the React terminal UI."
+        ),
+    )
+
+
+# ── Agent 3 Output: Statistical Analyst ───────────────────────────────────────
+
+class ModelEvaluation(BaseModel):
+    """Nested model — metrics for a single fitted model."""
+
+    model_name: str = Field(..., description="Scikit-learn estimator class name (e.g. 'LinearRegression').")
+    cv_r2_mean: float = Field(..., description="Mean cross-validated R² score (cv=5).")
+    cv_r2_std: float = Field(..., description="Standard deviation of cross-validated R² scores (cv=5).")
+    selected: bool = Field(
+        False,
+        description="True if this model was selected as the best performer by cross-val R².",
+    )
 
 
 class AnalysisResult(BaseModel):
-    """Output schema for Agent 2 — The Statistical Analyst."""
+    """Output schema for Agent 3 — The Statistical Analyst."""
 
     summary_statistics: dict[str, Any] = Field(
         default_factory=dict,
-        description="Descriptive statistics keyed by column name.",
+        description="Descriptive statistics keyed by column name (from df.describe(include='all')).",
     )
-    insights: list[str] = Field(default_factory=list, description="Bullet-point EDA findings.")
-    model_evaluation: Optional[dict[str, Any]] = Field(
-        None,
-        description="Optional: model metrics (e.g. R², MAE) if forecasting was performed.",
+    insights: list[str] = Field(
+        default_factory=list,
+        description="Bullet-point EDA findings generated by the agent (3–5 items).",
+    )
+    model_evaluations: list[ModelEvaluation] = Field(
+        default_factory=list,
+        description=(
+            "Evaluation metrics for each fitted model. Must contain at least two entries "
+            "(LinearRegression and DecisionTreeRegressor) when forecasting is performed."
+        ),
     )
     draft_chart_paths: list[str] = Field(
         default_factory=list,
-        description="Paths to draft chart PNGs generated for the HITL review.",
+        description="Absolute paths to draft chart PNGs saved for the HITL review.",
     )
-    execution_log: str = Field("", description="Raw Python REPL output captured during analysis.")
+    execution_log: list[str] = Field(
+        default_factory=list,
+        description="Raw Python REPL stdout lines captured during analysis.",
+    )
 
+
+# ── Agent 4 Output: Executive Presenter ───────────────────────────────────────
 
 class PresentationResult(BaseModel):
-    """Output schema for Agent 3 — The Executive Presenter."""
+    """Output schema for Agent 4 — The Executive Presenter."""
 
     final_chart_paths: list[str] = Field(
         default_factory=list,
-        description="Paths to polished, board-ready chart PNGs.",
+        description="Absolute paths to polished, board-ready chart PNGs.",
     )
-    executive_summary_md: str = Field("", description="Full executive narrative in Markdown.")
-    execution_log: str = Field("", description="Raw Python REPL output captured during presentation.")
+    executive_summary_md: str = Field(
+        "",
+        description="Full executive narrative in Markdown (H1 title, sections, bullet points).",
+    )
+    execution_log: list[str] = Field(
+        default_factory=list,
+        description="Raw Python REPL stdout lines captured during presentation generation.",
+    )
 
 
-class AgentState(BaseModel):
-    """Shared LangGraph state passed between all nodes."""
+# ── Shared LangGraph State ─────────────────────────────────────────────────────
 
-    session_id: str = Field(..., description="Unique session identifier (UUID).")
-    upload_path: str = Field(..., description="Path to the original uploaded file.")
-    llm_model: str = Field("gpt-4o", description="Active LLM model identifier.")
-    user_query: Optional[str] = Field(None, description="Optional natural-language query from the user.")
-    hitl_approved: bool = Field(False, description="Whether the HITL checkpoint has been approved.")
-    hitl_feedback: Optional[str] = Field(None, description="Revision feedback from the user (if any).")
-    cleaning_result: Optional[CleaningResult] = None
-    analysis_result: Optional[AnalysisResult] = None
-    presentation_result: Optional[PresentationResult] = None
+class AgentState(TypedDict):
+    """Shared state TypedDict passed between all LangGraph nodes.
+
+    TypedDict (not BaseModel) is required so LangGraph can apply Annotated
+    reducers — specifically add_messages on the `messages` field, which
+    accumulates LLM conversation history across nodes instead of overwriting it.
+
+    All optional fields default to None at invocation time; they are populated
+    progressively as each node completes.
+
+    Graph topology:
+        START → chief_planner → data_engineer → statistical_analyst
+              → [HITL conditional edge] → executive_presenter → END
+
+    HITL resume pattern:
+        graph.update_state(config, {"hitl_approved": True})
+        graph.astream(None, config=config)
+    """
+
+    # ── Session identity ───────────────────────────────────────────────────────
+    session_id: str
+    """Unique session identifier (UUID4). Set at upload time."""
+
+    upload_path: str
+    """Absolute path to the original uploaded CSV/Excel file in /uploads."""
+
+    # ── Planner inputs ─────────────────────────────────────────────────────────
+    user_query: Optional[str]
+    """User's business goal in natural language. Fed to the Chief Planner."""
+
+    data_profile: Optional[dict]
+    """Compact Data Profile JSON produced by data_profiler.py (no LLM).
+    Shape: {
+        "columns": [...],
+        "dtypes": {"col": "dtype", ...},
+        "null_counts": {"col": int, ...},
+        "null_pct": {"col": float, ...},
+        "head": [{row}, {row}, {row}]
+    }
+    The raw CSV is NEVER passed to any LLM — only this profile."""
+
+    # ── Chief Planner output ───────────────────────────────────────────────────
+    plan: Optional[dict]
+    """ExecutionPlan serialized to dict.
+    Shape: {"cleaning_steps": [...], "analysis_steps": [...]}
+    Set by chief_planner_node; read by data_engineer_node and statistical_analyst_node."""
+
+    # ── LLM configuration ─────────────────────────────────────────────────────
+    llm_model: str
+    """Active LLM model identifier. Default: 'gemini-2.5-flash'."""
+
+    # ── HITL control ──────────────────────────────────────────────────────────
+    hitl_approved: bool
+    """Whether the HITL checkpoint has been approved by the user."""
+
+    hitl_feedback: Optional[str]
+    """Revision feedback from the user (populated when action='revise')."""
+
+    # ── Conversation history (accumulated via add_messages reducer) ────────────
+    messages: Annotated[list[BaseMessage], add_messages]
+    """Accumulated LLM conversation history across all nodes.
+    add_messages reducer appends rather than overwrites on each node update."""
+
+    # ── Agent outputs (populated progressively) ────────────────────────────────
+    cleaning_result: Optional[CleaningResult]
+    """Output of Agent 2 (Data Engineer). None until data_engineer_node completes."""
+
+    analysis_result: Optional[AnalysisResult]
+    """Output of Agent 3 (Statistical Analyst). None until statistical_analyst_node completes."""
+
+    presentation_result: Optional[PresentationResult]
+    """Output of Agent 4 (Executive Presenter). None until executive_presenter_node completes."""

@@ -6,13 +6,13 @@ python-multipart>=0.0.9
 
 # ── Agentic Framework ─────────────────────────────────────────────────────────
 langchain>=0.3.0
-langchain-openai>=0.2.0
+langchain-google-genai>=4.2.0
 langchain-community>=0.3.0
 langchain-experimental>=0.3.0
 langgraph>=0.2.0
 
 # ── LLM Providers ─────────────────────────────────────────────────────────────
-openai>=1.40.0
+google-genai>=1.0.0
 huggingface-hub>=0.24.0
 transformers>=4.44.0
 
