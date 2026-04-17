@@ -1,17 +1,33 @@
 # Development Checklist: ADAW Pipeline
 
 ## Phase 1: Environment & Tooling
-- [ ] Initialize frontend repository (React/Vite + Tailwind CSS).
-- [ ] Initialize backend repository (FastAPI + Python environment).
-- [ ] Set up local SQLite database for session memory.
-- [ ] Configure local `/uploads` directory for CSV/Excel storage.
+- [✓] Initialize frontend repository (React/Vite + Tailwind CSS).
+- [✓] Initialize backend repository (FastAPI + Python environment).
+- [✓] Set up local SQLite database for session memory.
+- [✓] Configure local `/uploads` directory for CSV/Excel storage.
 
-## Phase 2: Core Backend Logic (LangGraph)
-- [ ] Build Agent 1 (Data Engineer): Pandas REPL tools for CSV cleaning.
-- [ ] Build Agent 2 (Statistical Analyst): Scikit-learn/NumPy tools for EDA. Ensure strict statistical rigor.
-- [ ] Build Agent 3 (Executive Presenter): Matplotlib/Seaborn tools + Markdown generation.
-- [ ] Configure LangGraph `StateGraph` and node routing.
-- [ ] Define Pydantic output schemas for all agents.
+## Phase 2: Core Backend Logic (LangGraph — Planner-Executor Pattern)
+
+### 2a. Schemas & State
+- [✓] **[@Paras + @Max]** Add `plan: Optional[dict]` and `data_profile: Optional[dict]` fields to `AgentState` TypedDict (`output_schemas.py`).
+
+### 2b. Data Profile Extraction (No LLM)
+- [✓] **[@Paras]** Build `backend/api/data_profiler.py`: automated script that extracts column names, dtypes, null counts, and `df.head(5)` from the uploaded file. Returns a compact JSON profile. Called by FastAPI before invoking the LangGraph graph.
+
+### 2c. Agent 1 — Chief Planner (NEW)
+- [✓] **[@Paras]** Build `backend/agents/chief_planner.py`: LLM node (Gemini, no REPL tool) that receives [User's Business Goal + Data Profile] and outputs a strict JSON plan with `cleaning_steps` and `analysis_steps`. No access to the full CSV.
+
+### 2d. Agent 2 — Data Engineer
+- [✓] **[@Paras]** Build `backend/agents/data_engineer.py`: Pandas REPL executor. Reads `cleaning_steps` from `state["plan"]` and executes them sequentially (no autonomous planning).
+
+### 2e. Agent 3 — Statistical Analyst
+- [ ] **[@Max]** Build `backend/agents/statistical_analyst.py`: Scikit-learn/NumPy REPL executor. Reads `analysis_steps` from `state["plan"]`. Strict statistical rigor maintained (cross-val required, no false heuristics).
+
+### 2f. Agent 4 — Executive Presenter
+- [ ] **[@Max]** Build `backend/agents/executive_presenter.py`: Matplotlib/Seaborn tools + Markdown executive narrative generation. Triggered after HITL approval.
+
+### 2g. LangGraph Routing
+- [ ] **[@Paras]** Update `backend/agents/graph.py`: add `chief_planner` node as first node after START; wire `data_profiler` call into the upload endpoint; preserve HITL conditional edge topology (`interrupt_before=["executive_presenter"]`).
 
 ## Phase 3: The Human-in-the-Loop & API
 - [ ] Implement LangGraph `MemorySaver` checkpointer.
