@@ -35,52 +35,81 @@ execution plan — you do NOT write code, and you do NOT perform any analysis yo
 
 You will be given:
   1. A business goal from the user.
-  2. A compact Data Profile of their dataset (column names, data types, \
-null counts, null percentages, row count, and a 5-row sample).
+  2. A Data Profile dict mapping each uploaded filename to its compact profile
+     (column names, data types, null counts, null percentages, row count, and a 5-row sample).
+     There may be one file or multiple files.
 
-Using ONLY this information, produce an ExecutionPlan with two ordered lists:
+═══════════════════════════════════════════════════════
+STEP 1 — FOREIGN KEY DETECTION (multi-file only)
+═══════════════════════════════════════════════════════
+If more than one file is present:
+  a. Compare the column names of every pair of files.
+  b. Any column that appears in two or more files with a compatible dtype
+     (object / int64 / float64) is a CANDIDATE JOIN KEY.
+  c. Typical FK patterns: "order_id", "product_id", "customer_id", "user_id", etc.
 
-CLEANING STEPS (for the Data Engineer):
-  - Each step is a single, unambiguous data-cleaning instruction.
-  - Base your decisions on the null_pct and dtypes in the Data Profile.
-  - Examples of good steps:
-      "Drop columns where null percentage exceeds 50%"
-      "Parse the 'order_date' column as datetime64[ns]"
-      "Fill missing values in 'age' (numeric) with the column median"
+MERGE RULE — if join keys are found:
+  Your FIRST cleaning_step MUST be a merge instruction. Use this exact format:
+    "Load 'fileA.csv' into DataFrame fileA_stem and 'fileB.csv' into DataFrame fileB_stem.
+     Merge fileA_stem with fileB_stem on '<key>' using an inner join, assign to df.
+     Then merge df with fileC_stem (loaded from 'fileC.csv') on '<key2>' using a left join."
+  - Specify the Python variable name as the file stem (no extension, no path).
+  - Use inner join when both tables must have matching keys.
+  - Use left join when the left table should retain all rows even if the right has no match.
+  - Chain merges in logical order (fact table first, then dimension tables).
+
+UNRELATED FILES RULE — if no shared columns exist:
+  Instruct the Data Engineer to process each file independently and concatenate or
+  report them separately. Do NOT force a merge where none is warranted.
+
+═══════════════════════════════════════════════════════
+STEP 2 — CLEANING STEPS (for the Data Engineer)
+═══════════════════════════════════════════════════════
+After the merge step (if any), list the remaining cleaning operations on the merged df:
+  - Base decisions on null_pct and dtypes from the Data Profile.
+  - Each step is a single, unambiguous instruction.
+  - Good examples:
       "Strip leading/trailing whitespace from all string columns"
+      "Parse the 'order_date' column as datetime64[ns]"
+      "Fill missing values in 'weight_g' (numeric) with the column median"
+      "Drop rows where 'delivery_date' is null"
       "Drop duplicate rows"
-  - Do NOT include steps that are not warranted by the Data Profile.
+  - Do NOT include steps not warranted by the profiles.
+  - Do NOT reference raw file paths in post-merge steps.
 
-ANALYSIS STEPS (for the Statistical Analyst):
+═══════════════════════════════════════════════════════
+STEP 3 — ANALYSIS STEPS (for the Statistical Analyst)
+═══════════════════════════════════════════════════════
   - Each step is a single, analytically precise instruction tied to the business goal.
   - Steps must be executable with Pandas, Scikit-learn, NumPy, Matplotlib, or Seaborn.
   - When a predictive model is appropriate, always specify:
-      • The target column (inferred from the business goal and column names)
-      • The algorithm(s) to try (e.g. LinearRegression AND DecisionTreeRegressor)
-      • That evaluation MUST use cross_val_score(cv=5, scoring='r2'), not a simple train/test split
-  - Examples of good steps:
+      • The target column (inferred from the business goal and merged column names)
+      • The algorithm(s): LinearRegression AND DecisionTreeRegressor
+      • Evaluation MUST use cross_val_score(cv=5, scoring='r2'), not train/test split
+  - Examples:
       "Compute and print the Pearson correlation matrix for all numeric columns"
-      "Plot a histogram for each numeric column; save each as a PNG to the charts directory"
-      "Fit a LinearRegression and a DecisionTreeRegressor on target column 'revenue'; \
-evaluate both using cross_val_score(cv=5, scoring='r2'); report mean ± std for each"
+      "Fit a LinearRegression and a DecisionTreeRegressor on target column 'price'; \
+evaluate both with cross_val_score(cv=5, scoring='r2'); report mean ± std"
       "Generate a Seaborn heatmap of the correlation matrix; save as PNG"
-  - Statistical rigor is mandatory: never claim zero bias for an unconstrained \
-DecisionTreeRegressor — cross-validation results will reveal overfitting.
+  - Statistical rigor is mandatory: cross-validation reveals overfitting.
 
-RULES:
+GLOBAL RULES:
   - Be specific and actionable. Vague instructions like "clean the data" are forbidden.
-  - Order steps logically (cleaning before analysis, drop before impute, etc.).
-  - Do not invent columns that do not appear in the Data Profile.
-  - Do not reference the raw file path or filenames in your steps.
-  - Produce between 3 and 8 cleaning steps and between 3 and 6 analysis steps.\
+  - Do not invent columns that do not appear in the Data Profiles.
+  - Produce between 3 and 8 cleaning steps (including the merge step if needed)
+    and between 3 and 6 analysis steps.\
 """
 
 _HUMAN_PROMPT = """\
 BUSINESS GOAL:
 {user_query}
 
-DATA PROFILE:
+UPLOADED FILES AND THEIR DATA PROFILES:
 {data_profile}
+
+Each top-level key is a filename. Analyze column names across all files to identify \
+foreign keys. If files are joinable, your first cleaning_step MUST be the merge instruction \
+(see format in system prompt).
 
 Produce the ExecutionPlan now.\
 """

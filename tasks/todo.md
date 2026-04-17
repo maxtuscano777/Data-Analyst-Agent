@@ -18,10 +18,10 @@
 - [✓] **[@Paras]** Build `backend/agents/chief_planner.py`: LLM node (Gemini, no REPL tool) that receives [User's Business Goal + Data Profile] and outputs a strict JSON plan with `cleaning_steps` and `analysis_steps`. No access to the full CSV.
 
 ### 2d. Agent 2 — Data Engineer
-- [ ] **[@Paras]** Build `backend/agents/data_engineer.py`: Pandas REPL executor. Reads `cleaning_steps` from `state["plan"]` and executes them sequentially (no autonomous planning).
+- [✓] **[@Paras]** Build `backend/agents/data_engineer.py`: Pandas REPL executor. Reads `cleaning_steps` from `state["plan"]` and executes them sequentially (no autonomous planning).
 
 ### 2e. Agent 3 — Statistical Analyst
-- [ ] **[@Paras]** Build `backend/agents/statistical_analyst.py`: Scikit-learn/NumPy REPL executor. Reads `analysis_steps` from `state["plan"]`. Strict statistical rigor maintained (cross-val required, no false heuristics).
+- [ ] **[@Max]** Build `backend/agents/statistical_analyst.py`: Scikit-learn/NumPy REPL executor. Reads `analysis_steps` from `state["plan"]`. Strict statistical rigor maintained (cross-val required, no false heuristics).
 
 ### 2f. Agent 4 — Executive Presenter
 - [ ] **[@Max]** Build `backend/agents/executive_presenter.py`: Matplotlib/Seaborn tools + Markdown executive narrative generation. Triggered after HITL approval.

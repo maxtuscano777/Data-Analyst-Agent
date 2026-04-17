@@ -87,6 +87,26 @@ def generate_data_profile(file_path: str) -> dict[str, Any]:
         return {"error": f"Profiling failed after load: {exc}"}
 
 
+def generate_multi_file_profile(file_paths: list[str]) -> dict[str, dict]:
+    """Profile multiple files and return a dict keyed by filename.
+
+    Calls generate_data_profile for each path. The existing single-file
+    function is unchanged — this is a thin orchestration wrapper.
+
+    Args:
+        file_paths: List of absolute paths to CSV or Excel files.
+
+    Returns:
+        {"orders.csv": {columns, dtypes, ...}, "items.csv": {...}, ...}
+        If a file fails to load, its value is {"error": "..."}.
+    """
+    result: dict[str, dict] = {}
+    for path_str in file_paths:
+        filename = Path(path_str).name
+        result[filename] = generate_data_profile(path_str)
+    return result
+
+
 def _sanitize_record(record: dict) -> dict:
     """Replace float NaN / ±Inf with None so the profile is JSON-serializable."""
     cleaned = {}

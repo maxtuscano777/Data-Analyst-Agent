@@ -170,8 +170,10 @@ class AgentState(TypedDict):
     session_id: str
     """Unique session identifier (UUID4). Set at upload time."""
 
-    upload_path: str
-    """Absolute path to the original uploaded CSV/Excel file in /uploads."""
+    upload_paths: list[str]
+    """Absolute paths to the uploaded CSV/Excel files in /uploads.
+    Single-file uploads: list with one element.
+    Multi-file uploads: one path per file, in the order uploaded."""
 
     # ── Planner inputs ─────────────────────────────────────────────────────────
     user_query: Optional[str]
@@ -179,13 +181,8 @@ class AgentState(TypedDict):
 
     data_profile: Optional[dict]
     """Compact Data Profile JSON produced by data_profiler.py (no LLM).
-    Shape: {
-        "columns": [...],
-        "dtypes": {"col": "dtype", ...},
-        "null_counts": {"col": int, ...},
-        "null_pct": {"col": float, ...},
-        "head": [{row}, {row}, {row}]
-    }
+    Multi-file shape: {"filename.csv": {columns, dtypes, null_counts, null_pct, row_count, sample_data}, ...}
+    Single-file shape: same structure with one key.
     The raw CSV is NEVER passed to any LLM — only this profile."""
 
     # ── Chief Planner output ───────────────────────────────────────────────────
