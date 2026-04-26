@@ -23,8 +23,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.schemas.output_schemas import AgentState, CleaningResult
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-_UPLOADS_DIR = Path(__file__).parent.parent / "uploads"
-_CLEANED_CSV_PATH = str(_UPLOADS_DIR / "cleaned_data.csv")
+_CLEANED_CSV_PATH = str(Path(__file__).parent.parent / "uploads" / "cleaned" / "cleaned_data.csv")
 
 # ── Prompts ────────────────────────────────────────────────────────────────────
 _SYSTEM_PROMPT = """\
@@ -164,8 +163,10 @@ def data_engineer_node(state: AgentState) -> dict:
     # ── Post-process: read cleaned CSV directly for reliable metadata ──────────
     # Avoids dependence on REPL stdout capture (PythonAstREPLTool may truncate
     # large print output, so parsing REPL text is fragile).
+    import os as _os
     import pandas as _pd  # local import — pandas is already installed in venv
 
+    _os.makedirs(Path(_CLEANED_CSV_PATH).parent, exist_ok=True)
     cleaned_p = Path(_CLEANED_CSV_PATH)
     if cleaned_p.exists() and cleaned_p.stat().st_size > 0:
         cleaned_df = _pd.read_csv(cleaned_p)
@@ -181,6 +182,13 @@ def data_engineer_node(state: AgentState) -> dict:
         dtype_corrections = {}
 
     rows_before: int = rows_before_fallback
+
+    # ── Persist execution log to backend/logs/{session_id}_engineer.log ───────
+    session_id: str = state.get("session_id") or "unknown"
+    logs_dir = Path(__file__).parent.parent / "logs"
+    _os.makedirs(logs_dir, exist_ok=True)
+    log_path = logs_dir / f"{session_id}_engineer.log"
+    log_path.write_text("\n\n".join(execution_log))
 
     # ── Build CleaningResult ───────────────────────────────────────────────────
     cleaning_result = CleaningResult(

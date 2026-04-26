@@ -20,7 +20,7 @@ from backend.api.data_profiler import generate_multi_file_profile
 from backend.agents.chief_planner import chief_planner_node
 from backend.agents.data_engineer import data_engineer_node
 
-UPLOADS = Path(__file__).parent / "backend" / "uploads"
+RAW = Path(__file__).parent / "backend" / "uploads" / "raw"
 
 USER_GOAL = (
     "I want to understand if shipping costs (freight_value) are impacting our "
@@ -29,9 +29,9 @@ USER_GOAL = (
 )
 
 upload_paths = [
-    str(UPLOADS / "olist_orders_dataset.csv"),
-    str(UPLOADS / "olist_order_items_dataset.csv"),
-    str(UPLOADS / "olist_products_dataset.csv"),
+    str(RAW / "olist_orders_dataset.csv"),
+    str(RAW / "olist_order_items_dataset.csv"),
+    str(RAW / "olist_products_dataset.csv"),
 ]
 
 # ── 1. Multi-file Profile ──────────────────────────────────────────────────────
@@ -138,3 +138,20 @@ print("PIPELINE TEST PASSED")
 print("=" * 60)
 print(f"  cleaned_data.csv → {cleaned_path}")
 print(f"  No hardcoded pd.merge() — joins were detected and executed by the agents.")
+
+# ── Artifact assertions ────────────────────────────────────────────────────────
+SESSION_ID = state["session_id"]
+LOGS_DIR   = Path(__file__).parent / "backend" / "logs"
+PLANS_DIR  = Path(__file__).parent / "backend" / "plans"
+
+log_file  = LOGS_DIR  / f"{SESSION_ID}_engineer.log"
+plan_file = PLANS_DIR / f"{SESSION_ID}_plan.json"
+
+assert log_file.exists() and log_file.stat().st_size > 0, \
+    f"FAIL: engineer log not found at {log_file}"
+assert plan_file.exists() and plan_file.stat().st_size > 0, \
+    f"FAIL: plan JSON not found at {plan_file}"
+
+print(f"\n  engineer log  → {log_file}")
+print(f"  plan JSON     → {plan_file}")
+print("\nALL ARTIFACT ASSERTIONS PASSED")
