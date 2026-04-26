@@ -65,6 +65,10 @@ state = {
     "presentation_result": None,
 }
 
+# LangGraph config — required when invoking via graph.invoke() with a checkpointer.
+# thread_id ties all checkpointed steps to a single resumable session.
+config = {"configurable": {"thread_id": state["session_id"]}}
+
 # ── 3. Chief Planner ───────────────────────────────────────────────────────────
 print("\nCalling Chief Planner (live Gemini API — gemini-2.5-flash)...")
 print("(Planner must autonomously detect order_id / product_id FK joins)\n")
