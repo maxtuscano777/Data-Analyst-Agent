@@ -29,12 +29,13 @@ def generate_data_profile(file_path: str) -> dict[str, Any]:
     Returns:
         On success:
         {
-            "columns":     list[str]          — ordered column names
-            "dtypes":      dict[str, str]     — column → pandas dtype string
-            "null_counts": dict[str, int]     — column → count of NaN values
-            "null_pct":    dict[str, float]   — column → % missing (0–100, 2 dp)
-            "row_count":   int                — total rows in the raw file
-            "sample_data": list[dict]         — first 5 rows as list of records
+            "columns":             list[str]       — ordered column names
+            "dtypes":              dict[str, str]  — column → pandas dtype string
+            "null_counts":         dict[str, int]  — column → count of NaN values
+            "null_pct":            dict[str, float]— column → % missing (0–100, 2 dp)
+            "unique_values_count": dict[str, int]  — column → distinct non-null value count
+            "row_count":           int             — total rows in the raw file
+            "sample_data":         list[dict]      — first 5 rows as list of records
         }
 
         On failure:
@@ -69,18 +70,23 @@ def generate_data_profile(file_path: str) -> dict[str, Any]:
             col: round(null_counts[col] / row_count * 100, 2) if row_count > 0 else 0.0
             for col in columns
         }
+        # int() cast required: nunique() returns numpy.int64, not JSON-serializable
+        unique_values_count: dict[str, int] = {
+            col: int(df[col].nunique(dropna=True)) for col in columns
+        }
 
         # Convert head(5) to JSON-safe records — replace NaN/Inf with None
         sample_raw: list[dict] = df.head(5).to_dict(orient="records")
         sample_data: list[dict] = [_sanitize_record(row) for row in sample_raw]
 
         return {
-            "columns": columns,
-            "dtypes": dtypes,
-            "null_counts": null_counts,
-            "null_pct": null_pct,
-            "row_count": row_count,
-            "sample_data": sample_data,
+            "columns":             columns,
+            "dtypes":              dtypes,
+            "null_counts":         null_counts,
+            "null_pct":            null_pct,
+            "unique_values_count": unique_values_count,
+            "row_count":           row_count,
+            "sample_data":         sample_data,
         }
 
     except Exception as exc:  # noqa: BLE001

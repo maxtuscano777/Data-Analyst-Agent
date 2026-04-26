@@ -80,7 +80,7 @@ List the remaining cleaning operations on the working DataFrame(s):
   - If a merge occurred in step 1, all subsequent steps operate on the merged `df`.
   - If files are unrelated (no merge), each step must explicitly name which DataFrame
     it targets (e.g. "On the `orders` DataFrame, drop rows where 'status' is null").
-  - Base decisions on null_pct and dtypes from the Data Profile.
+  - Base decisions on null_pct, dtypes, and unique_values_count from the Data Profile.
   - Each step is a single, unambiguous instruction.
   - Good examples:
       "Strip leading/trailing whitespace from all string columns in df"
@@ -90,6 +90,14 @@ List the remaining cleaning operations on the working DataFrame(s):
       "Drop duplicate rows in df"
   - Do NOT include steps not warranted by the profiles.
   - Do NOT reference raw file paths in post-merge steps.
+
+  NULL HANDLING RULE (CRITICAL):
+  NEVER drop rows based on null values if those rows contain valid data for OTHER parts
+  of the analysis. For example, an order missing a delivery date still has valid 'price'
+  and 'freight_value' data — do NOT drop it during cleaning.
+  Instead, leave nulls intact. Instruct the Statistical Analyst to handle NaNs locally
+  (e.g., using dropna(subset=[...])) ONLY when performing the specific calculation or
+  chart that requires that column.
 
 ═══════════════════════════════════════════════════════
 STEP 3 — ANALYSIS STEPS (for the Statistical Analyst)
@@ -103,15 +111,16 @@ STEP 3 — ANALYSIS STEPS (for the Statistical Analyst)
   - ML DATA PREP RULE (mandatory when a model is requested):
       All feature columns passed to `.fit()` MUST be numeric. Before any model-fitting
       step, you MUST instruct the Analyst to prepare the feature matrix:
-        • Apply One-Hot Encoding (`pd.get_dummies()`) to any low-cardinality categorical
-          columns that are analytically relevant (e.g. 'product_category_name').
+        • Apply One-Hot Encoding (`pd.get_dummies()`) to low-cardinality categorical
+          columns (i.e. where `unique_values_count` is less than 20) that are
+          analytically relevant (e.g. 'product_category_name').
         • OR explicitly drop all remaining object-dtype columns from the feature matrix.
       Never pass a DataFrame containing string/object columns directly to a sklearn estimator.
   - Examples:
       "Compute and print the Pearson correlation matrix for all numeric columns"
       "Apply pd.get_dummies() to 'product_category_name'; drop all remaining object-dtype \
 columns; fit a LinearRegression and a DecisionTreeRegressor on target column 'price'; \
-evaluate both with cross_val_score(cv=5, scoring='r2'); report mean ± std"
+evaluate both with cross_val_score(cv=5, scoring='r2'); report the mean and standard deviation"
       "Generate a Seaborn heatmap of the correlation matrix; save as PNG"
   - Statistical rigor is mandatory: cross-validation reveals overfitting.
 
