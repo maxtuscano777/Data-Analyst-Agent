@@ -1,0 +1,15 @@
+{
+  "cleaning_steps": [
+    "Merge `olist_order_items_dataset` with `olist_orders_dataset` on 'order_id' using an inner join, assign to df. Then merge df with `olist_products_dataset` on 'product_id' using a left join.",
+    "Parse 'order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date', 'order_delivered_customer_date', 'order_estimated_delivery_date', and 'shipping_limit_date' columns in df as datetime64[ns].",
+    "Drop rows in df where 'order_delivered_customer_date' is null.",
+    "Drop rows in df where 'product_category_name' is null.",
+    "Calculate 'delivery_delay_days' in df as the difference in days between 'order_delivered_customer_date' and 'order_estimated_delivery_date'."
+  ],
+  "analysis_steps": [
+    "Compute the Pearson correlation coefficient between 'freight_value' and 'price' in df.",
+    "Generate a scatter plot of 'freight_value' vs 'price' in df; save as PNG.",
+    "Group df by 'product_category_name' and calculate the mean 'delivery_delay_days' for each category. Report the top 10 product categories with the highest mean delivery delay.",
+    "Apply pd.get_dummies() to 'product_category_name' in df; drop all remaining object-dtype columns from the feature matrix; fit a LinearRegression and a DecisionTreeRegressor on target column 'price' using 'freight_value' and the one-hot encoded product categories as features; evaluate both with cross_val_score(cv=5, scoring='r2'); report mean \b\n\u00b1 std of R-squared scores."
+  ]
+}

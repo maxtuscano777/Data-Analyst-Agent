@@ -15,6 +15,8 @@ ABSOLUTE CONSTRAINTS:
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -50,13 +52,22 @@ If more than one file is present:
 
 MERGE RULE — if join keys are found:
   Your FIRST cleaning_step MUST be a merge instruction. Use this exact format:
-    "Load 'fileA.csv' into DataFrame fileA_stem and 'fileB.csv' into DataFrame fileB_stem.
-     Merge fileA_stem with fileB_stem on '<key>' using an inner join, assign to df.
-     Then merge df with fileC_stem (loaded from 'fileC.csv') on '<key2>' using a left join."
-  - Specify the Python variable name as the file stem (no extension, no path).
+    "Merge `olist_orders_dataset` with `olist_order_items_dataset` on 'order_id' using
+     an inner join, assign to df. Then merge df with `olist_products_dataset` on
+     'product_id' using a left join."
+  - VARIABLE NAME RULE: The Python variable name for each file is the filename WITHOUT
+    its extension and WITHOUT any suffix. Examples: 'orders.csv' → `orders`,
+    'olist_orders_dataset.csv' → `olist_orders_dataset`. NEVER append "_stem",
+    "_df", or any other suffix. The Data Engineer loads each file using exactly
+    this variable name.
   - Use inner join when both tables must have matching keys.
   - Use left join when the left table should retain all rows even if the right has no match.
   - Chain merges in logical order (fact table first, then dimension tables).
+  - SUFFIX RULE: If two tables being merged share any non-key column names, Pandas will
+    auto-append '_x' and '_y' suffixes. After the merge step, you MUST add an explicit
+    cleaning step to either (a) drop the redundant '_x' or '_y' column, or (b) rename
+    it to the correct intended name. Reference the exact column names with their suffix
+    (e.g. "Drop column 'price_y'; rename 'price_x' to 'price'").
 
 UNRELATED FILES RULE — if no shared columns exist:
   Instruct the Data Engineer to process each file independently and concatenate or
@@ -65,15 +76,18 @@ UNRELATED FILES RULE — if no shared columns exist:
 ═══════════════════════════════════════════════════════
 STEP 2 — CLEANING STEPS (for the Data Engineer)
 ═══════════════════════════════════════════════════════
-After the merge step (if any), list the remaining cleaning operations on the merged df:
+List the remaining cleaning operations on the working DataFrame(s):
+  - If a merge occurred in step 1, all subsequent steps operate on the merged `df`.
+  - If files are unrelated (no merge), each step must explicitly name which DataFrame
+    it targets (e.g. "On the `orders` DataFrame, drop rows where 'status' is null").
   - Base decisions on null_pct and dtypes from the Data Profile.
   - Each step is a single, unambiguous instruction.
   - Good examples:
-      "Strip leading/trailing whitespace from all string columns"
-      "Parse the 'order_date' column as datetime64[ns]"
-      "Fill missing values in 'weight_g' (numeric) with the column median"
-      "Drop rows where 'delivery_date' is null"
-      "Drop duplicate rows"
+      "Strip leading/trailing whitespace from all string columns in df"
+      "Parse the 'order_date' column in df as datetime64[ns]"
+      "Fill missing values in 'weight_g' in df with the column median"
+      "Drop rows in df where 'delivery_date' is null"
+      "Drop duplicate rows in df"
   - Do NOT include steps not warranted by the profiles.
   - Do NOT reference raw file paths in post-merge steps.
 
@@ -86,9 +100,17 @@ STEP 3 — ANALYSIS STEPS (for the Statistical Analyst)
       • The target column (inferred from the business goal and merged column names)
       • The algorithm(s): LinearRegression AND DecisionTreeRegressor
       • Evaluation MUST use cross_val_score(cv=5, scoring='r2'), not train/test split
+  - ML DATA PREP RULE (mandatory when a model is requested):
+      All feature columns passed to `.fit()` MUST be numeric. Before any model-fitting
+      step, you MUST instruct the Analyst to prepare the feature matrix:
+        • Apply One-Hot Encoding (`pd.get_dummies()`) to any low-cardinality categorical
+          columns that are analytically relevant (e.g. 'product_category_name').
+        • OR explicitly drop all remaining object-dtype columns from the feature matrix.
+      Never pass a DataFrame containing string/object columns directly to a sklearn estimator.
   - Examples:
       "Compute and print the Pearson correlation matrix for all numeric columns"
-      "Fit a LinearRegression and a DecisionTreeRegressor on target column 'price'; \
+      "Apply pd.get_dummies() to 'product_category_name'; drop all remaining object-dtype \
+columns; fit a LinearRegression and a DecisionTreeRegressor on target column 'price'; \
 evaluate both with cross_val_score(cv=5, scoring='r2'); report mean ± std"
       "Generate a Seaborn heatmap of the correlation matrix; save as PNG"
   - Statistical rigor is mandatory: cross-validation reveals overfitting.
@@ -96,8 +118,9 @@ evaluate both with cross_val_score(cv=5, scoring='r2'); report mean ± std"
 GLOBAL RULES:
   - Be specific and actionable. Vague instructions like "clean the data" are forbidden.
   - Do not invent columns that do not appear in the Data Profiles.
-  - Produce between 3 and 8 cleaning steps (including the merge step if needed)
-    and between 3 and 6 analysis steps.\
+  - Produce up to 8 necessary cleaning steps and up to 6 high-value analysis steps.
+    Do not invent steps just to fill a quota — only include steps justified by the
+    Data Profile and the Business Goal.\
 """
 
 _HUMAN_PROMPT = """\
@@ -160,5 +183,12 @@ def chief_planner_node(state: AgentState) -> dict:
             "data_profile": data_profile_str,
         }
     )
+
+    # ── Persist plan to backend/plans/{session_id}_plan.json ──────────────────
+    session_id: str = state.get("session_id") or "unknown"
+    plans_dir = Path(__file__).parent.parent / "plans"
+    os.makedirs(plans_dir, exist_ok=True)
+    plan_path = plans_dir / f"{session_id}_plan.json"
+    plan_path.write_text(json.dumps(result.model_dump(), indent=2))
 
     return {"plan": result.model_dump()}
