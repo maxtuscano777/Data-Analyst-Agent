@@ -179,6 +179,9 @@ class AgentState(TypedDict):
     user_query: Optional[str]
     """User's business goal in natural language. Fed to the Chief Planner."""
 
+    domain_context: Optional[str]
+    """Optional industry or business context (e.g., 'E-commerce logistics') to guide the analysis."""
+
     data_profile: Optional[dict]
     """Compact Data Profile JSON produced by data_profiler.py (no LLM).
     Multi-file shape: {"filename.csv": {columns, dtypes, null_counts, null_pct, row_count, sample_data}, ...}

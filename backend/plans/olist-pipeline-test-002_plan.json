@@ -1,15 +1,15 @@
 {
   "cleaning_steps": [
-    "Merge `olist_order_items_dataset` with `olist_orders_dataset` on 'order_id' using an inner join, assign to df. Then merge df with `olist_products_dataset` on 'product_id' using a left join.",
-    "Parse 'order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date', 'order_delivered_customer_date', 'order_estimated_delivery_date', and 'shipping_limit_date' columns in df as datetime64[ns].",
-    "Drop rows in df where 'product_category_name' is null."
+    "Merge `olist_orders_dataset` with `olist_order_items_dataset` on 'order_id' using an inner join, assign to df. Then merge df with `olist_products_dataset` on 'product_id' using a left join.",
+    "Parse the following columns in df as datetime64[ns]: 'order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date', 'order_delivered_customer_date', 'order_estimated_delivery_date', 'shipping_limit_date'.",
+    "Fill missing values in 'product_category_name' in df with the string 'unknown'."
   ],
   "analysis_steps": [
-    "Calculate a new column `delivery_delay_days` in df as the difference in days between 'order_delivered_customer_date' and 'order_estimated_delivery_date'. If 'order_delivered_customer_date' is null, the delay should be null. If 'order_delivered_customer_date' is earlier than 'order_estimated_delivery_date', the delay should be 0 (no delay).",
-    "Group df by 'order_id' and sum 'price' to get 'total_order_price' and sum 'freight_value' to get 'total_freight_value'.",
-    "Compute the Pearson correlation between 'total_freight_value' and 'total_order_price'.",
-    "Generate a scatter plot of 'total_freight_value' vs 'total_order_price' to visualize the relationship; save as PNG.",
-    "Group df by 'product_category_name' and calculate the mean of 'delivery_delay_days'.",
-    "Identify the top 10 product categories with the highest mean 'delivery_delay_days' and generate a bar chart; save as PNG."
+    "Calculate 'delivery_delay' as the difference between 'order_delivered_customer_date' and 'order_estimated_delivery_date' for rows where 'order_status' is 'delivered' and 'order_delivered_customer_date' is not null. Convert the delay to days.",
+    "Compute the Pearson correlation coefficient between 'freight_value' and 'price'.",
+    "Generate a scatter plot of 'freight_value' vs 'price'; save as PNG.",
+    "Group the DataFrame by 'product_category_name' and calculate the mean 'delivery_delay'. Report the top 10 product categories with the highest mean 'delivery_delay'.",
+    "Generate a bar chart showing the mean 'delivery_delay' for the top 10 product categories identified in the previous step; save as PNG.",
+    "Apply pd.get_dummies() to 'product_category_name'; drop all remaining object-dtype columns from the feature matrix; fit a LinearRegression and a DecisionTreeRegressor on target column 'price'; evaluate both with cross_val_score(cv=5, scoring='r2'); report the mean and standard deviation of the R-squared scores."
   ]
 }
