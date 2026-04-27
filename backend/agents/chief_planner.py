@@ -68,6 +68,12 @@ MERGE RULE — if join keys are found:
     cleaning step to either (a) drop the redundant '_x' or '_y' column, or (b) rename
     it to the correct intended name. Reference the exact column names with their suffix
     (e.g. "Drop column 'price_y'; rename 'price_x' to 'price'").
+  - POST-JOIN CARDINALITY REASONING: Real-world joins can cause massive row explosions.
+    You must think critically about the relationship between tables (1-to-1, 1-to-many,
+    many-to-many, etc.). Instruct the Engineer to print the post-merge row count.
+    If an unintended explosion is likely, do NOT blindly drop duplicates. Instead, devise
+    a logically sound strategy based on the Business Goal (e.g., aggregate metrics on the
+    'many' table BEFORE joining, or adjust the join keys) to preserve data integrity.
 
 UNRELATED FILES RULE — if no shared columns exist:
   Instruct the Data Engineer to process each file independently and concatenate or
@@ -133,8 +139,12 @@ GLOBAL RULES:
 """
 
 _HUMAN_PROMPT = """\
+{domain_section}
+
 BUSINESS GOAL:
 {user_query}
+
+{feedback_section}
 
 UPLOADED FILES AND THEIR DATA PROFILES:
 {data_profile}
@@ -169,11 +179,21 @@ def chief_planner_node(state: AgentState) -> dict:
     """
     user_query: str = state.get("user_query") or "Perform a general exploratory data analysis."
     data_profile: dict = state.get("data_profile") or {}
-    llm_model: str = state.get("llm_model") or "gemini-2.0-flash"
+    llm_model: str = state.get("llm_model") or "gemini-2.5-flash"
+    domain_context: str | None = state.get("domain_context")
+    hitl_feedback: str | None = state.get("hitl_feedback")
 
     # Serialize the Data Profile to a readable JSON string for the prompt.
     # Indented for readability — the LLM sees a tidy structure, not a blob.
     data_profile_str = json.dumps(data_profile, indent=2)
+
+    # Build optional sections — empty string when not provided (renders as blank line).
+    domain_section = f"DOMAIN CONTEXT:\n{domain_context}" if domain_context else ""
+    feedback_section = (
+        f"HUMAN FEEDBACK ON PREVIOUS PLAN:\n{hitl_feedback}\n"
+        "You MUST adjust your plan to satisfy this feedback."
+        if hitl_feedback else ""
+    )
 
     llm = ChatGoogleGenerativeAI(
         model=llm_model,
@@ -188,8 +208,10 @@ def chief_planner_node(state: AgentState) -> dict:
 
     result: ExecutionPlan = chain.invoke(
         {
-            "user_query": user_query,
-            "data_profile": data_profile_str,
+            "user_query":       user_query,
+            "data_profile":     data_profile_str,
+            "domain_section":   domain_section,
+            "feedback_section": feedback_section,
         }
     )
 

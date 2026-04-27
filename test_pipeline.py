@@ -54,6 +54,7 @@ state = {
     "session_id":          "olist-pipeline-test-002",
     "upload_paths":        upload_paths,
     "user_query":          USER_GOAL,
+    "domain_context":      "Brazilian E-commerce logistics and sales",
     "data_profile":        profile,
     "plan":                None,
     "llm_model":           "gemini-2.5-flash",
