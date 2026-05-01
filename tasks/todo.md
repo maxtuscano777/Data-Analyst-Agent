@@ -21,13 +21,13 @@
 - [✓] **[@Paras]** Build `backend/agents/data_engineer.py`: Pandas REPL executor. Reads `cleaning_steps` from `state["plan"]` and executes them sequentially (no autonomous planning).
 
 ### 2e. Agent 3 — Statistical Analyst
-- [ ] **[@Max]** Build `backend/agents/statistical_analyst.py`: Scikit-learn/NumPy REPL executor. Reads `analysis_steps` from `state["plan"]`. Strict statistical rigor maintained (cross-val required, no false heuristics).
+- [✓] **[@Max]** Build `backend/agents/statistical_analyst.py`: Scikit-learn/NumPy REPL executor. Reads `analysis_steps` from `state["plan"]`. Strict statistical rigor maintained (cross-val required, no false heuristics). Parses `---ANALYSIS_SUMMARY---` block for structured insights + ModelEvaluation output.
 
 ### 2f. Agent 4 — Executive Presenter
-- [ ] **[@Max]** Build `backend/agents/executive_presenter.py`: Matplotlib/Seaborn tools + Markdown executive narrative generation. Triggered after HITL approval.
+- [✓] **[@Max]** Build `backend/agents/executive_presenter.py`: Two-phase — Phase 1 REPL polishes Matplotlib/Seaborn charts; Phase 2 LLM generates Markdown executive narrative. Triggered after HITL approval.
 
 ### 2g. LangGraph Routing
-- [ ] **[@Paras]** Update `backend/agents/graph.py`: add `chief_planner` node as first node after START; wire `data_profiler` call into the upload endpoint; preserve HITL conditional edge topology (`interrupt_before=["executive_presenter"]`).
+- [✓] **[@Max]** Updated `backend/agents/graph.py`: added `chief_planner` node as first node after START; full pipeline `chief_planner → data_engineer → statistical_analyst → [HITL] → executive_presenter → END`.
 
 ## Phase 3: The Human-in-the-Loop & API
 - [ ] Implement LangGraph `MemorySaver` checkpointer.

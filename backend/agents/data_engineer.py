@@ -14,10 +14,12 @@ ABSOLUTE CONSTRAINTS:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_experimental.tools import PythonAstREPLTool
+from langchain_google_vertexai import ChatVertexAI
 from langchain_google_vertexai import ChatVertexAI
 
 from backend.schemas.output_schemas import AgentState, CleaningResult
