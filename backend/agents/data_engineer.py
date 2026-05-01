@@ -18,7 +18,7 @@ from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_experimental.tools import PythonAstREPLTool
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_vertexai import ChatVertexAI
 
 from backend.schemas.output_schemas import AgentState, CleaningResult
 
@@ -126,7 +126,7 @@ def data_engineer_node(state: AgentState) -> dict:
 
     # ── Initialize REPL tool and LLM ──────────────────────────────────────────
     repl = PythonAstREPLTool()
-    llm = ChatGoogleGenerativeAI(model=llm_model, temperature=0)
+    llm = ChatVertexAI(model=llm_model, temperature=0)
     llm_with_tools = llm.bind_tools([repl])
 
     # ── Conversation seed ──────────────────────────────────────────────────────

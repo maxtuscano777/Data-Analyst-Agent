@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_vertexai import ChatVertexAI
 
 from backend.schemas.output_schemas import AgentState, ExecutionPlan
 
@@ -195,7 +195,7 @@ def chief_planner_node(state: AgentState) -> dict:
         if hitl_feedback else ""
     )
 
-    llm = ChatGoogleGenerativeAI(
+    llm = ChatVertexAI(
         model=llm_model,
         temperature=0,       # deterministic — plans should be stable
     )

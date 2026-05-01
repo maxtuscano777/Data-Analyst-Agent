@@ -66,8 +66,11 @@ state = {
     "presentation_result": None,
 }
 
-# LangGraph config — required when invoking via graph.invoke() with a checkpointer.
-# thread_id ties all checkpointed steps to a single resumable session.
+# LangGraph config — required when invoking the compiled graph with a MemorySaver
+# checkpointer. thread_id ties all checkpointed steps to a single resumable session.
+# NOTE: test_pipeline.py currently calls nodes directly (not via graph.invoke()) because
+# statistical_analyst and executive_presenter are not yet implemented. This config will
+# be passed to graph.invoke(state, config) once the full pipeline is wired in Phase 3.
 config = {"configurable": {"thread_id": state["session_id"]}}
 
 # ── 3. Chief Planner ───────────────────────────────────────────────────────────
