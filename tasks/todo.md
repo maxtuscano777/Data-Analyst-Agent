@@ -27,7 +27,7 @@
 - [✓] **[@Max]** Build `backend/agents/executive_presenter.py`: Two-phase — Phase 1 REPL polishes Matplotlib/Seaborn charts; Phase 2 LLM generates Markdown executive narrative. Triggered after HITL approval.
 
 ### 2g. LangGraph Routing
-- [✓] **[@Max]** Updated `backend/agents/graph.py`: added `chief_planner` node as first node after START; full pipeline `chief_planner → data_engineer → statistical_analyst → [HITL] → executive_presenter → END`.
+- [✓] **[@Paras + @Max]** Updated `backend/agents/graph.py`: added `chief_planner` node as first node after START; full pipeline `chief_planner → data_engineer → statistical_analyst → [HITL] → executive_presenter → END`.
 
 ## Phase 3: The Human-in-the-Loop & API
 - [✓] Implement LangGraph `MemorySaver` checkpointer.
