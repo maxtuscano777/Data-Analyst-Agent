@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import os
-import re
+import time
 from pathlib import Path
 
 from google.api_core.exceptions import InvalidArgument
@@ -34,7 +34,7 @@ _DRAFT_CHARTS_DIR = Path(__file__).parent.parent / "charts" / "draft"
 
 # ── ReAct loop tuning ─────────────────────────────────────────────────────────
 _MAX_ITERATIONS = 30   # outer bound — enough for 3 reprompts + ~6 analysis steps
-_MAX_REPROMPTS  = 3    # consecutive plain-text turns before giving up
+_MAX_REPROMPTS  = 5    # consecutive plain-text turns before giving up
 
 # Injected when the model returns plain text before making its first tool call.
 _NO_TOOL_CALL_REPROMPT = (
@@ -69,26 +69,66 @@ CHART RULES:
 - Use plt.tight_layout() before plt.savefig().
 - Call plt.close('all') after each savefig() to free memory.
 - Name chart files descriptively (e.g. correlation_heatmap.png, cv_scores.png).
+- SEABORN PALETTE RULE (Seaborn 0.13+): When passing `palette=` to any categorical
+  plot function (barplot, boxplot, violinplot, stripplot, etc.), you MUST also pass
+  `hue=` set to the same categorical variable and add `legend=False`. Omitting `hue=`
+  while using `palette=` raises a FutureWarning and will break in a future release.
+  Correct pattern:
+    sns.barplot(data=df, x='category', y='value',
+                hue='category', palette='muted', legend=False)
+  For single-colour fills (no categorical split), use `color=` instead of `palette=`.
+
+PANDAS SAFETY RULES — Pandas 2.x Copy-on-Write (CoW) is ENFORCED:
+
+RULE — COLUMN-LEVEL inplace IS BANNED. df['col'] or df_copy['col'] returns a CoW
+copy in Pandas 2.x. ANY inplace call on it raises ChainedAssignmentError and the
+original DataFrame is never updated.
+
+The most common violation in ML feature prep is the median imputation loop:
+  WRONG:
+    for col in cols:
+        df[col].fillna(df[col].median(), inplace=True)   # ChainedAssignmentError
+  RIGHT (direct assignment per column):
+    for col in cols:
+        df[col] = df[col].fillna(df[col].median())
+  RIGHT (vectorized — one line):
+    df[cols] = df[cols].fillna(df[cols].median())
+
+General rule: NEVER use inplace=True on a column expression. ALWAYS assign back:
+  df['col'] = df['col'].fillna(value)
+  df['col'] = df['col'].replace(old, new)
+  df['col'] = df['col'].astype(dtype)
+
+SAFE whole-DataFrame inplace (these operate on df itself, not a copy):
+  df.drop(columns=[col], inplace=True)
+  df.drop_duplicates(inplace=True)
+  df.rename(columns={{...}}, inplace=True)
 
 SUMMARY RULE (MANDATORY — the very last python_repl_ast call):
-After completing all analysis steps, make one final python_repl_ast call that prints:
+After completing all analysis steps, make one final python_repl_ast call whose ONLY
+statement is a single print() call that outputs the entire summary block in one shot:
 
----ANALYSIS_SUMMARY---
-{{
-  "insights": [
-    "<data-backed finding 1>",
-    "<data-backed finding 2>",
-    "<data-backed finding 3>"
-  ],
-  "model_evaluations": [
-    {{"model_name": "<name>", "cv_r2_mean": <float>, "cv_r2_std": <float>, "selected": <bool>}},
-    ...
-  ]
+summary = {{
+    "insights": [
+        "<data-backed finding 1>",
+        "<data-backed finding 2>",
+        "<data-backed finding 3>"
+    ],
+    "model_evaluations": [
+        {{"model_name": "<name>", "cv_r2_mean": <float>, "cv_r2_std": <float>, "selected": <bool>}},
+    ]
 }}
----END_SUMMARY---
+print("---ANALYSIS_SUMMARY---\\n" + json.dumps(summary, indent=2) + "\\n---END_SUMMARY---")
 
-If no predictive model was fitted, set "model_evaluations" to [].
-Insights must be 3–5 quantified, data-backed findings (cite actual numbers).\
+CRITICAL RULES for the summary call:
+- The print() must be the ONLY statement in the final code block (not preceded by any
+  other print, assignment inside the same block, etc. — build the dict first in a
+  SEPARATE prior tool call if needed, then the last call is ONLY this one print()).
+- Use a single print() with string concatenation as shown — NOT three separate print()
+  calls. Three separate prints only capture the last one.
+- The ---END_SUMMARY--- marker is REQUIRED on its own line inside the print string.
+- If no predictive model was fitted, set "model_evaluations" to [].
+- Insights must be 3–5 quantified, data-backed findings (cite actual numbers).\
 """
 
 
@@ -124,33 +164,103 @@ def _build_human_content(
         f"When saving charts, always save to: {draft_charts_dir}/<descriptive_name>.png\n"
         "Print a one-line confirmation after each step (e.g. 'Step 1 done').\n\n"
         "BLOCK 3 — Final Summary (the last mandatory python_repl_ast call):\n"
-        "Print the ---ANALYSIS_SUMMARY--- marker, then the JSON object\n"
-        "(keys: 'insights' and 'model_evaluations'), then ---END_SUMMARY---.\n"
-        "See system prompt for the exact format.\n\n"
+        "This call must contain ONLY ONE statement: a single print() that outputs the\n"
+        "entire summary block in one shot. Use this exact pattern:\n\n"
+        "  summary = {\n"
+        '      "insights": ["<finding 1>", "<finding 2>", "<finding 3>"],\n'
+        '      "model_evaluations": [\n'
+        '          {"model_name": "<n>", "cv_r2_mean": 0.0, "cv_r2_std": 0.0, "selected": True}\n'
+        "      ]\n"
+        "  }\n"
+        '  print("---ANALYSIS_SUMMARY---\\n" + json.dumps(summary, indent=2) + "\\n---END_SUMMARY---")\n\n'
+        "Do NOT use three separate print() calls — only the last print is captured.\n"
+        "Build the summary dict in a prior tool call if needed; this final call prints only.\n\n"
         "Call python_repl_ast now to execute Block 1."
     )
 
 
-def _message_has_text_content(msg: BaseMessage) -> bool:
-    """Return True when a message contains non-empty text content."""
-    content = msg.content
-    if isinstance(content, str):
-        return bool(content.strip())
-    if isinstance(content, list):
-        # Gemini expects at least one `parts` entry with actual content.
-        for item in content:
-            if isinstance(item, str) and item.strip():
-                return True
-            if isinstance(item, dict):
-                text = item.get("text")
-                if isinstance(text, str) and text.strip():
-                    return True
-    return False
+_EMPTY_CONTENT_PLACEHOLDER = "[no content]"
 
 
-def _sanitize_conversation(conversation: list[BaseMessage]) -> list[BaseMessage]:
-    """Drop empty messages to avoid Gemini 'missing parts' request failures."""
-    return [msg for msg in conversation if _message_has_text_content(msg)]
+def _coerce_nonempty_content(msgs: list[BaseMessage]) -> list[BaseMessage]:
+    """Return a coerced copy of msgs where every message has non-empty content.
+
+    Vertex AI rejects messages whose 'parts' field is empty or contains only
+    empty strings. We replace empty content with a placeholder instead of
+    removing the message, which would break the ReAct chain of thought.
+    Uses Pydantic's model_copy() — the original message objects are never mutated.
+    """
+    result = []
+    for msg in msgs:
+        content = msg.content
+        is_empty = (
+            (isinstance(content, str) and not content.strip())
+            or (
+                isinstance(content, list)
+                and not any(
+                    (isinstance(item, str) and item.strip())
+                    or (isinstance(item, dict) and item.get("text", "").strip())
+                    for item in content
+                )
+            )
+        )
+        result.append(
+            msg.model_copy(update={"content": _EMPTY_CONTENT_PLACEHOLDER})
+            if is_empty
+            else msg
+        )
+    return result
+
+
+def _extract_summary_json(log: str) -> dict | None:
+    """Extract the JSON object from ---ANALYSIS_SUMMARY--- in REPL [OUTPUT] sections.
+
+    PythonAstREPLTool only captures the stdout of the LAST statement in a code block.
+    This means the marker can appear in two places in the log:
+      - Inside a code block (in a print() call string) — must be IGNORED
+      - Inside an [OUTPUT] block — the actual captured REPL output — VALID
+
+    We distinguish the two by checking whether the nearest preceding section tag
+    ([OUTPUT] vs [TOOL:]) before the marker. Only [OUTPUT]-section markers are parsed.
+    Brace-depth counting then finds the complete outer JSON object boundary without
+    requiring ---END_SUMMARY--- to be present.
+    """
+    marker = "---ANALYSIS_SUMMARY---"
+    output_tag = "[OUTPUT]"
+    tool_tag = "[TOOL:"
+
+    search_pos = 0
+    while True:
+        marker_pos = log.find(marker, search_pos)
+        if marker_pos == -1:
+            return None
+
+        preceding = log[:marker_pos]
+        last_output = preceding.rfind(output_tag)
+        last_tool = preceding.rfind(tool_tag)
+
+        if last_output <= last_tool:
+            # Marker is inside a code block — skip and continue searching.
+            search_pos = marker_pos + 1
+            continue
+
+        # Marker is inside an [OUTPUT] block — extract the JSON.
+        start = log.find("{", marker_pos + len(marker))
+        if start == -1:
+            return None
+
+        depth = 0
+        for i, ch in enumerate(log[start:], start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(log[start : i + 1])
+                    except (json.JSONDecodeError, ValueError):
+                        return None
+        return None
 
 
 # ── LangGraph node ─────────────────────────────────────────────────────────────
@@ -170,6 +280,7 @@ def statistical_analyst_node(state: AgentState) -> dict:
             "messages": [<agent conversation turns>],
         }
     """
+    time.sleep(20)  # quota pacing: let data_engineer's TPM usage age out before starting
     cleaning_result = state.get("cleaning_result")
     plan: dict = state.get("plan") or {}
     analysis_steps: list[str] = plan.get("analysis_steps", [])
@@ -208,9 +319,10 @@ def statistical_analyst_node(state: AgentState) -> dict:
     repl = PythonAstREPLTool()
     llm = ChatVertexAI(
         model=llm_model,
-        project=os.getenv("GOOGLE_CLOUD_PROJECT", "project-38d33c02-d4a0-425d-a92"),
-        location=os.getenv("GOOGLE_CLOUD_REGION", "us-central1"),
+        project="advisorai-62611",
+        location="us-central1",
         temperature=0,
+        max_retries=10,
     )
     llm_with_tools = llm.bind_tools([repl])
 
@@ -218,7 +330,7 @@ def statistical_analyst_node(state: AgentState) -> dict:
         SystemMessage(content=system_content),
         HumanMessage(content=human_content),
     ]
-    conversation: list[BaseMessage] = _sanitize_conversation(seed_conversation)
+    conversation: list[BaseMessage] = list(seed_conversation)
     execution_log: list[str] = []
     tool_call_count = 0   # total REPL executions across all loop iterations
     reprompt_count  = 0   # consecutive plain-text turns with no tool calls
@@ -226,21 +338,10 @@ def statistical_analyst_node(state: AgentState) -> dict:
     # ── ReAct loop ─────────────────────────────────────────────────────────────
     for _ in range(_MAX_ITERATIONS):
         try:
-            response = llm_with_tools.invoke(conversation)
+            response = llm_with_tools.invoke(_coerce_nonempty_content(conversation))
         except InvalidArgument as exc:
-            # Recover from malformed request payloads (e.g., empty message `parts`).
-            conversation = _sanitize_conversation(conversation)
-            execution_log.append(
-                "[WARNING] Vertex rejected request due to missing content parts. "
-                "Retrying once with sanitized conversation."
-            )
-            try:
-                response = llm_with_tools.invoke(conversation)
-            except InvalidArgument:
-                execution_log.append(
-                    f"[ERROR] Vertex InvalidArgument persisted after sanitize: {exc}"
-                )
-                break
+            execution_log.append(f"[ERROR] Vertex InvalidArgument — aborting loop: {exc}")
+            break
         conversation.append(response)
 
         if not response.tool_calls:
@@ -276,7 +377,7 @@ def statistical_analyst_node(state: AgentState) -> dict:
                 )
                 continue
 
-            repl_output = repl.invoke(code_snippet)
+            repl_output = repl.invoke(code_snippet) or "[Tool executed — no stdout]"
             tool_call_count += 1
 
             log_entry = (
@@ -303,16 +404,11 @@ def statistical_analyst_node(state: AgentState) -> dict:
     model_evaluations: list[ModelEvaluation] = []
 
     full_log = "\n".join(execution_log)
-    summary_match = re.search(
-        r"---ANALYSIS_SUMMARY---\s*(\{.*?\})\s*---END_SUMMARY---",
-        full_log,
-        re.DOTALL,
-    )
-    if summary_match:
+    summary_data = _extract_summary_json(full_log)
+    if summary_data:
         try:
-            data = json.loads(summary_match.group(1))
-            insights = data.get("insights", [])
-            raw_evals: list[dict] = data.get("model_evaluations", [])
+            insights = summary_data.get("insights", [])
+            raw_evals: list[dict] = summary_data.get("model_evaluations", [])
             if raw_evals:
                 best_mean = max(float(e.get("cv_r2_mean", -999.0)) for e in raw_evals)
                 model_evaluations = [
@@ -324,7 +420,7 @@ def statistical_analyst_node(state: AgentState) -> dict:
                     )
                     for e in raw_evals
                 ]
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError):
             insights = ["Analysis completed — see execution log for detailed results."]
 
     # ── Summary statistics (direct pandas read — avoids REPL truncation) ──────

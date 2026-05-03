@@ -130,6 +130,21 @@ evaluate both with cross_val_score(cv=5, scoring='r2'); report the mean and stan
       "Generate a Seaborn heatmap of the correlation matrix; save as PNG"
   - Statistical rigor is mandatory: cross-validation reveals overfitting.
 
+  VISUALIZATION RULE (MANDATORY):
+  At least ONE analysis step MUST instruct the Statistical Analyst to generate and
+  save a chart as a PNG file. The chart must be:
+    - Directly tied to a key finding from the analysis (not a generic placeholder).
+    - Produced with Seaborn or Matplotlib.
+    - Named descriptively (e.g. top_revenue_categories.png, delivery_delay_dist.png).
+  Choose the chart type that best fits the data and business goal:
+    • Bar chart     — ranked categorical comparisons (top N categories, seller rankings)
+    • Distribution  — numeric column spread (price, freight_value, delivery_days)
+    • Scatter plot  — relationship between two numeric variables
+    • Heatmap       — correlation matrix across numeric features
+  The Analyst's system prompt handles saving mechanics (tight_layout, savefig, close).
+  This chart is what the human reviewer sees at the HITL checkpoint. Without it, the
+  HITL stage has no visuals to display and the Executive Presenter has nothing to polish.
+
 GLOBAL RULES:
   - Be specific and actionable. Vague instructions like "clean the data" are forbidden.
   - Do not invent columns that do not appear in the Data Profiles.
@@ -197,9 +212,10 @@ def chief_planner_node(state: AgentState) -> dict:
 
     llm = ChatVertexAI(
         model=llm_model,
-        project=os.getenv("GOOGLE_CLOUD_PROJECT", "project-38d33c02-d4a0-425d-a92"),
-        location=os.getenv("GOOGLE_CLOUD_REGION", "us-central1"),
+        project="advisorai-62611",
+        location="us-central1",
         temperature=0,       # deterministic — plans should be stable
+        max_retries=10,
     )
 
     # Bind structured output — the LLM MUST return a valid ExecutionPlan.

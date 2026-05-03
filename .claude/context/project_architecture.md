@@ -99,7 +99,8 @@ The shared state TypedDict passed between all nodes. Key fields:
 | Field | Type | Description |
 |---|---|---|
 | `session_id` | `str` | Unique session UUID |
-| `upload_path` | `str` | Path to original uploaded file |
+| `upload_paths` | `list[str]` | Absolute paths to uploaded CSV/Excel files. Single-file uploads: list with one element. Multi-file: one path per file, in upload order. |
+| `domain_context` | `Optional[str]` | Optional industry or business context (e.g. 'E-commerce logistics') injected into the Chief Planner's prompt to guide domain-specific analysis decisions. |
 | `data_profile` | `Optional[dict]` | Output of `data_profiler.py` (columns, dtypes, nulls, head) |
 | `plan` | `Optional[dict]` | Chief Planner's JSON output: `{"cleaning_steps": [...], "analysis_steps": [...]}` |
 | `llm_model` | `str` | Active LLM model identifier (default: `gemini-2.0-flash`) |

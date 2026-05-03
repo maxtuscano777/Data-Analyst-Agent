@@ -20,12 +20,57 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_experimental.tools import PythonAstREPLTool
 from langchain_google_vertexai import ChatVertexAI
-from langchain_google_vertexai import ChatVertexAI
 
 from backend.schemas.output_schemas import AgentState, CleaningResult
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-_CLEANED_CSV_PATH = str(Path(__file__).parent.parent / "uploads" / "cleaned" / "cleaned_data.csv")
+# _CLEANED_CSV_PATH is computed per-session inside data_engineer_node to prevent
+# data corruption when multiple sessions run concurrently.
+
+# ── ReAct loop tuning ─────────────────────────────────────────────────────────
+_MAX_ITERATIONS = 20   # outer bound — enough for 5 reprompts + ~6 cleaning steps
+_MAX_REPROMPTS  = 5    # consecutive plain-text turns before giving up
+
+# Injected when the model returns plain text before making its first tool call.
+_NO_TOOL_CALL_REPROMPT = (
+    "You MUST call python_repl_ast right now. Do NOT respond with plain text. "
+    "Your next message must be a tool call. "
+    "Execute Block 1 immediately: call python_repl_ast with the import and "
+    "CSV load statements shown in the human message above. No explanations — only a tool call."
+)
+
+# ── Vertex AI empty-content guard ──────────────────────────────────────────────
+_EMPTY_CONTENT_PLACEHOLDER = "[no content]"
+
+
+def _coerce_nonempty_content(msgs: list) -> list:
+    """Return a coerced copy of msgs where every message has non-empty content.
+
+    Vertex AI rejects messages whose 'parts' field is empty or contains only
+    empty strings. We replace empty content with a placeholder instead of
+    removing the message, which would break the ReAct chain of thought.
+    Uses Pydantic's model_copy() — the original message objects are never mutated.
+    """
+    result = []
+    for msg in msgs:
+        content = msg.content
+        is_empty = (
+            (isinstance(content, str) and not content.strip())
+            or (
+                isinstance(content, list)
+                and not any(
+                    (isinstance(item, str) and item.strip())
+                    or (isinstance(item, dict) and item.get("text", "").strip())
+                    for item in content
+                )
+            )
+        )
+        result.append(
+            msg.model_copy(update={"content": _EMPTY_CONTENT_PLACEHOLDER})
+            if is_empty
+            else msg
+        )
+    return result
 
 # ── Prompts ────────────────────────────────────────────────────────────────────
 _SYSTEM_PROMPT = """\
@@ -33,12 +78,35 @@ You are a Senior Data Engineer. You MUST use the python_repl_ast tool to execute
 ALL Python code. Never write code in plain text — always call python_repl_ast. \
 Use only pandas and the standard library. Do NOT perform any analysis or visualization.
 
-CRITICAL PANDAS RULES (Pandas 2.x):
-- NEVER use df[col].method(inplace=True) — it silently fails on copies.
-- For fillna: use df[col] = df[col].fillna(value)  NOT  df[col].fillna(value, inplace=True)
-- For dropna on rows: df.dropna(subset=[col], inplace=True) is fine (whole-DataFrame inplace).
-- For drop_duplicates: df.drop_duplicates(inplace=True) is fine.
-- For string ops: df[col] = df[col].str.strip()  NOT  df[col].str.strip(inplace=True)\
+CRITICAL PANDAS RULES — Pandas 2.x Copy-on-Write (CoW) is ENFORCED:
+
+RULE 1 — COLUMN-LEVEL inplace IS BANNED. df['col'] returns a CoW copy. ANY
+inplace method on it writes to the copy and raises ChainedAssignmentError.
+  WRONG:  df['col'].fillna(value, inplace=True)
+  WRONG:  df['col'].replace(old, new, inplace=True)
+  WRONG:  df['col'].astype(dtype)  [without assignment — this does nothing]
+  RIGHT:  df['col'] = df['col'].fillna(value)
+  RIGHT:  df['col'] = df['col'].replace(old, new)
+  RIGHT:  df['col'] = df['col'].astype(dtype)
+
+RULE 2 — CHAINED BOOLEAN INDEXING IS BANNED. df[mask]['col'] = value writes
+to a temporary copy — the original df is never updated.
+  WRONG:  df[df['col'] > 0]['col'] = 1
+  RIGHT:  df.loc[df['col'] > 0, 'col'] = 1
+  Use df.loc[mask, col] = value for ALL conditional column mutations.
+
+RULE 3 — DATETIME PARSING. ALWAYS use pd.to_datetime with errors='coerce'.
+  RIGHT:  df['col'] = pd.to_datetime(df['col'], errors='coerce')
+  WRONG:  df['col'].replace('', pd.NaT, inplace=True)
+  WRONG:  df['col'] = df['col'].astype('datetime64[ns]')   # raises on bad values
+  Parse ALL datetime columns with a single direct assignment — no inplace, no replace.
+
+SAFE WHOLE-DATAFRAME inplace (these are fine — operate on df itself, not a copy):
+  df.dropna(subset=[col], inplace=True)
+  df.drop_duplicates(inplace=True)
+  df.drop(columns=[col], inplace=True)
+  df.rename(columns={...}, inplace=True)
+  df.reset_index(drop=True, inplace=True)\
 """
 
 _HUMAN_PROMPT_TEMPLATE = """\
@@ -91,6 +159,12 @@ def data_engineer_node(state: AgentState) -> dict:
     cleaning_steps: list[str] = plan.get("cleaning_steps", [])
     llm_model: str = state.get("llm_model") or "gemini-2.5-flash"
     data_profile: dict = state.get("data_profile") or {}
+    session_id: str = state.get("session_id") or "default"
+
+    # Session-scoped cleaned CSV path — prevents data corruption across concurrent sessions.
+    _cleaned_csv_path = str(
+        Path(__file__).parent.parent / "uploads" / "cleaned" / session_id / "cleaned_data.csv"
+    )
 
     # Sum row_counts across all profiled files as a rows_before approximation.
     rows_before_fallback: int = sum(
@@ -99,7 +173,7 @@ def data_engineer_node(state: AgentState) -> dict:
 
     if not cleaning_steps:
         stub = CleaningResult(
-            cleaned_csv_path=_CLEANED_CSV_PATH,
+            cleaned_csv_path=_cleaned_csv_path,
             rows_before=rows_before_fallback,
             rows_after=rows_before_fallback,
             columns_dropped=[],
@@ -122,13 +196,19 @@ def data_engineer_node(state: AgentState) -> dict:
     human_content = _HUMAN_PROMPT_TEMPLATE.format(
         file_listing=file_listing,
         load_statements=load_statements,
-        output_path=_CLEANED_CSV_PATH,
+        output_path=_cleaned_csv_path,
         steps_numbered=steps_numbered,
     )
 
     # ── Initialize REPL tool and LLM ──────────────────────────────────────────
     repl = PythonAstREPLTool()
-    llm = ChatVertexAI(model=llm_model, temperature=0)
+    llm = ChatVertexAI(
+        model=llm_model,
+        project="advisorai-62611",
+        location="us-central1",
+        temperature=0,
+        max_retries=10,
+    )
     llm_with_tools = llm.bind_tools([repl])
 
     # ── Conversation seed ──────────────────────────────────────────────────────
@@ -137,20 +217,32 @@ def data_engineer_node(state: AgentState) -> dict:
         HumanMessage(content=human_content),
     ]
     execution_log: list[str] = []
+    tool_call_count = 0   # total REPL executions across all loop iterations
+    reprompt_count  = 0   # consecutive plain-text turns before first tool call
 
     # ── ReAct loop ─────────────────────────────────────────────────────────────
-    max_iterations = 20  # guard against runaway loops
-    for _ in range(max_iterations):
-        response = llm_with_tools.invoke(conversation)
+    for _ in range(_MAX_ITERATIONS):
+        response = llm_with_tools.invoke(_coerce_nonempty_content(conversation))
         conversation.append(response)
 
-        # No tool calls → agent is done
         if not response.tool_calls:
+            if tool_call_count == 0 and reprompt_count < _MAX_REPROMPTS:
+                reprompt_count += 1
+                execution_log.append(
+                    f"[WARNING] No tool call on turn {reprompt_count} — "
+                    f"injecting reprompt ({reprompt_count}/{_MAX_REPROMPTS})."
+                )
+                conversation.append(HumanMessage(content=_NO_TOOL_CALL_REPROMPT))
+                continue
+            # Either done (tool_call_count > 0) or reprompts exhausted.
             break
+
+        reprompt_count = 0  # reset streak — model is actively using the tool
 
         for tool_call in response.tool_calls:
             code_snippet = tool_call["args"].get("query", "")
-            repl_output = repl.invoke(code_snippet)
+            repl_output = repl.invoke(code_snippet) or "[Tool executed — no stdout]"
+            tool_call_count += 1
 
             log_entry = f"[TOOL: {tool_call['name']}]\n{code_snippet}\n[OUTPUT]\n{repl_output}"
             execution_log.append(log_entry)
@@ -168,8 +260,8 @@ def data_engineer_node(state: AgentState) -> dict:
     import os as _os
     import pandas as _pd  # local import — pandas is already installed in venv
 
-    _os.makedirs(Path(_CLEANED_CSV_PATH).parent, exist_ok=True)
-    cleaned_p = Path(_CLEANED_CSV_PATH)
+    _os.makedirs(Path(_cleaned_csv_path).parent, exist_ok=True)
+    cleaned_p = Path(_cleaned_csv_path)
     if cleaned_p.exists() and cleaned_p.stat().st_size > 0:
         cleaned_df = _pd.read_csv(cleaned_p)
         rows_after: int = len(cleaned_df)
@@ -186,7 +278,6 @@ def data_engineer_node(state: AgentState) -> dict:
     rows_before: int = rows_before_fallback
 
     # ── Persist execution log to backend/logs/{session_id}_engineer.log ───────
-    session_id: str = state.get("session_id") or "unknown"
     logs_dir = Path(__file__).parent.parent / "logs"
     _os.makedirs(logs_dir, exist_ok=True)
     log_path = logs_dir / f"{session_id}_engineer.log"
@@ -194,7 +285,7 @@ def data_engineer_node(state: AgentState) -> dict:
 
     # ── Build CleaningResult ───────────────────────────────────────────────────
     cleaning_result = CleaningResult(
-        cleaned_csv_path=_CLEANED_CSV_PATH,
+        cleaned_csv_path=_cleaned_csv_path,
         rows_before=rows_before,
         rows_after=rows_after,
         columns_dropped=columns_dropped,
