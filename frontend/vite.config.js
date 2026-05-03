@@ -12,9 +12,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // Proxy API and WebSocket calls to the FastAPI backend in development
-      '/ws': { target: 'ws://localhost:8000', ws: true },
-      '/upload': { target: 'http://localhost:8000' },
-      '/health': { target: 'http://localhost:8000' },
+      '/ws':      { target: 'ws://localhost:8000', ws: true },
+      '/upload':  { target: 'http://localhost:8000' },
+      '/charts':  { target: 'http://localhost:8000' },
+      '/session': { target: 'http://localhost:8000' },
+      '/health':  { target: 'http://localhost:8000' },
     },
   },
 })
