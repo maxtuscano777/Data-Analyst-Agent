@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from backend.agents.chief_planner import chief_planner_node
 from backend.agents.data_engineer import data_engineer_node
@@ -47,7 +48,7 @@ def build_graph() -> StateGraph:
     builder.add_edge("executive_presenter", END)
 
     # Compile with in-memory checkpointer and HITL interrupt before final step
-    checkpointer = MemorySaver()
+    checkpointer = MemorySaver(serde=JsonPlusSerializer())
     compiled = builder.compile(
         checkpointer=checkpointer,
         interrupt_before=["executive_presenter"],

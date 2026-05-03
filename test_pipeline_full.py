@@ -17,7 +17,46 @@ Expected runtime: 5–10 minutes (four live LLM + REPL stages).
 """
 
 import json
+import sys
+import time
 from pathlib import Path
+
+# ── Pre-flight Environment Validation ─────────────────────────────────────────
+# Runs before any agent import or API call. A broken numpy/scipy install would
+# otherwise waste the full Planner + Engineer + Analyst quota before crashing
+# deep inside the REPL during sklearn import.
+_REPAIR_CMD = (
+    "  Repair command (from project root, no activation needed):\n"
+    '    backend/.venv/bin/pip install --force-reinstall "numpy==2.4.4"'
+)
+
+
+def _preflight_check() -> None:
+    _checks = [
+        ("pandas",                              "pandas"),
+        ("numpy",                               "numpy"),
+        ("scipy.sparse",                        "scipy.sparse"),
+        ("sklearn.linear_model (scikit-learn)", "sklearn.linear_model"),
+    ]
+    errors = []
+    for label, module in _checks:
+        try:
+            __import__(module)
+        except (ImportError, ModuleNotFoundError) as exc:
+            errors.append(f"  FAIL {label}: {exc}")
+
+    if errors:
+        print("[PRE-FLIGHT] Environment validation FAILED:", file=sys.stderr)
+        for err in errors:
+            print(err, file=sys.stderr)
+        print(_REPAIR_CMD, file=sys.stderr)
+        sys.exit(1)
+
+    print("[PRE-FLIGHT OK] numpy / scipy / sklearn / pandas all import cleanly.\n")
+
+
+_preflight_check()
+# ── End Pre-flight ─────────────────────────────────────────────────────────────
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -33,6 +72,7 @@ from backend.agents.statistical_analyst import statistical_analyst_node
 from backend.agents.executive_presenter import executive_presenter_node
 
 # ── Constants ──────────────────────────────────────────────────────────────────
+_RATE_LIMIT_PAUSE_SECONDS = 60  # quota window pause before Step 4 to avoid 429s
 SESSION_ID  = "olist-full-pipeline-test-001"
 BACKEND_DIR = Path(__file__).parent / "backend"
 LOGS_DIR    = BACKEND_DIR / "logs"
@@ -250,6 +290,12 @@ print("")
 print("Simulating HITL approval: setting state['hitl_approved'] = True")
 state["hitl_approved"] = True
 print("[OK] HITL approved — proceeding to Executive Presenter.\n")
+
+print(f"Pausing {_RATE_LIMIT_PAUSE_SECONDS}s to allow Vertex AI quota to reset...")
+for _remaining in range(_RATE_LIMIT_PAUSE_SECONDS, 0, -10):
+    print(f"  {_remaining}s remaining...")
+    time.sleep(10)
+print("[OK] Quota pause complete. Starting Executive Presenter.\n")
 
 # ── Step 4: Executive Presenter ────────────────────────────────────────────────
 print("\n" + "=" * 60)

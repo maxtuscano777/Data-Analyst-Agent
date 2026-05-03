@@ -30,8 +30,8 @@
 - [✓] **[@Max]** Updated `backend/agents/graph.py`: added `chief_planner` node as first node after START; full pipeline `chief_planner → data_engineer → statistical_analyst → [HITL] → executive_presenter → END`.
 
 ## Phase 3: The Human-in-the-Loop & API
-- [ ] Implement LangGraph `MemorySaver` checkpointer.
-- [ ] Set `interrupt_before=["executive_presenter"]` in the graph compiler.
+- [✓] Implement LangGraph `MemorySaver` checkpointer.
+- [✓] Set `interrupt_before=["executive_presenter"]` in the graph compiler.
 - [ ] Build FastAPI WebSocket endpoints for streaming agent execution logs.
 - [ ] Build FastAPI WebSocket endpoints for the HITL pause/approval cycle.
 

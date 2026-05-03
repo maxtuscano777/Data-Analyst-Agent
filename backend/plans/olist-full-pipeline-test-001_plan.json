@@ -2,15 +2,14 @@
   "cleaning_steps": [
     "Merge `olist_orders_dataset` with `olist_order_items_dataset` on 'order_id' using an inner join, assign to df. Then merge df with `olist_products_dataset` on 'product_id' using a left join.",
     "Parse 'order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date', 'order_delivered_customer_date', 'order_estimated_delivery_date', and 'shipping_limit_date' columns in df as datetime64[ns].",
-    "Fill missing values in 'product_category_name' in df with 'unknown'.",
-    "Fill missing values in 'product_name_lenght', 'product_description_lenght', 'product_photos_qty', 'product_weight_g', 'product_length_cm', 'product_height_cm', and 'product_width_cm' in df with the column median."
+    "Fill missing values in 'product_category_name' in df with 'unknown'."
   ],
   "analysis_steps": [
-    "Create a new column `total_revenue` in df by summing 'price' and 'freight_value'.",
-    "Calculate `delivery_lead_time` in df as the difference between 'order_delivered_customer_date' and 'order_purchase_timestamp'.",
-    "Calculate `delivery_delay` in df as the difference between 'order_delivered_customer_date' and 'order_estimated_delivery_date'.",
-    "Identify and print the top 10 'product_category_name' by total `total_revenue`.",
-    "For each 'product_category_name', calculate the percentage of orders where `delivery_delay` is greater than 0 (late deliveries). Print the top 10 'product_category_name' with the highest percentage of late deliveries.",
-    "Prepare features for price forecasting: Apply pd.get_dummies() to 'product_category_name'. Drop all remaining object-dtype columns from the feature matrix. Fit a LinearRegression and a DecisionTreeRegressor model to forecast 'price'. Evaluate both models using cross_val_score(cv=5, scoring='r2') and report the mean and standard deviation of the R-squared scores."
+    "Calculate `total_item_revenue` as the sum of 'price' and 'freight_value'.",
+    "Calculate `delivery_duration` as the difference between 'order_delivered_customer_date' and 'order_purchase_timestamp'.",
+    "Calculate `delivery_delay` as the difference between 'order_delivered_customer_date' and 'order_estimated_delivery_date'.",
+    "Identify the top 10 `product_category_name` by total `total_item_revenue` and generate a bar chart; save as 'top_revenue_categories.png'.",
+    "Filter df for delivered orders (where 'order_status' is 'delivered' and 'order_delivered_customer_date' is not null). On this filtered DataFrame, identify the top 10 `product_category_name` by average `delivery_delay` and generate a bar chart; save as 'top_late_delivery_categories.png'.",
+    "Prepare features for modeling: Apply `pd.get_dummies()` to 'product_category_name'. Fill nulls in 'product_name_lenght', 'product_description_lenght', 'product_photos_qty', 'product_weight_g', 'product_length_cm', 'product_height_cm', 'product_width_cm' with their respective medians. Drop any remaining object-dtype columns. Fit a LinearRegression and a DecisionTreeRegressor on target column 'price' using the prepared features; evaluate both with `cross_val_score(cv=5, scoring='r2')` and report the mean and standard deviation."
   ]
 }

@@ -41,6 +41,14 @@ RULES:
     import matplotlib
     matplotlib.use('Agg')
 - Apply sns.set_theme(style='whitegrid', palette='muted') in Block 1.
+- SEABORN PALETTE RULE (Seaborn 0.13+): When passing `palette=` to any categorical
+  plot function (barplot, boxplot, violinplot, stripplot, etc.), you MUST also pass
+  `hue=` set to the same categorical variable and add `legend=False`. Omitting `hue=`
+  while using `palette=` raises a FutureWarning and will break in a future release.
+  Correct pattern:
+    sns.barplot(data=df, x='category', y='value',
+                hue='category', palette='muted', legend=False)
+  For single-colour fills (no categorical split), use `color=` instead of `palette=`.
 - Figure size: at least (10, 6) for presentation readability.
 - Every chart must have: a clear title, labeled axes, and key annotations.
 - Use plt.tight_layout() before plt.savefig().
@@ -84,6 +92,50 @@ FORMATTING RULES:
 - Do not hallucinate findings not supported by the provided insights.
 - Omit Section 4 entirely if no predictive model was evaluated.\
 """
+
+
+# ── ReAct loop tuning ─────────────────────────────────────────────────────────
+_MAX_ITERATIONS = 20   # outer bound — sufficient for reprompts + chart blocks
+_MAX_REPROMPTS  = 5    # consecutive plain-text turns before giving up
+
+_NO_TOOL_CALL_REPROMPT = (
+    "You MUST call python_repl_ast right now. Do NOT respond with plain text. "
+    "Your next message must be a tool call. "
+    "Execute Block 1 immediately: call python_repl_ast with the matplotlib backend, "
+    "imports, and data-load statements shown in the human message above. "
+    "No explanations — only a tool call."
+)
+
+_EMPTY_CONTENT_PLACEHOLDER = "[no content]"
+
+
+def _coerce_nonempty_content(msgs: list) -> list:
+    """Return a coerced copy of msgs where every message has non-empty content.
+
+    Vertex AI rejects messages whose 'parts' field is empty or contains only
+    empty strings. Replace empty content with a placeholder instead of removing
+    the message, which would break the ReAct chain of thought.
+    """
+    result = []
+    for msg in msgs:
+        content = msg.content
+        is_empty = (
+            (isinstance(content, str) and not content.strip())
+            or (
+                isinstance(content, list)
+                and not any(
+                    (isinstance(item, str) and item.strip())
+                    or (isinstance(item, dict) and item.get("text", "").strip())
+                    for item in content
+                )
+            )
+        )
+        result.append(
+            msg.model_copy(update={"content": _EMPTY_CONTENT_PLACEHOLDER})
+            if is_empty
+            else msg
+        )
+    return result
 
 
 def _build_repl_human(
@@ -204,9 +256,10 @@ def executive_presenter_node(state: AgentState) -> dict:
     repl = PythonAstREPLTool()
     llm = ChatVertexAI(
         model=llm_model,
-        project=os.getenv("GOOGLE_CLOUD_PROJECT", "project-38d33c02-d4a0-425d-a92"),
-        location=os.getenv("GOOGLE_CLOUD_REGION", "us-central1"),
+        project="advisorai-62611",
+        location="us-central1",
         temperature=0,
+        max_retries=10,
     )
     llm_with_tools = llm.bind_tools([repl])
 
@@ -222,16 +275,30 @@ def executive_presenter_node(state: AgentState) -> dict:
         HumanMessage(content=repl_human),
     ]
 
-    for _ in range(20):
-        response = llm_with_tools.invoke(conversation)
+    tool_call_count = 0
+    reprompt_count  = 0
+
+    for _ in range(_MAX_ITERATIONS):
+        response = llm_with_tools.invoke(_coerce_nonempty_content(conversation))
         conversation.append(response)
 
         if not response.tool_calls:
-            break
+            if tool_call_count == 0 and reprompt_count < _MAX_REPROMPTS:
+                reprompt_count += 1
+                execution_log.append(
+                    f"[WARNING] No tool call on turn {reprompt_count} — "
+                    f"injecting reprompt ({reprompt_count}/{_MAX_REPROMPTS})."
+                )
+                conversation.append(HumanMessage(content=_NO_TOOL_CALL_REPROMPT))
+                continue
+            break  # done (tool_call_count > 0) or reprompts exhausted
+
+        reprompt_count = 0  # reset streak — model is actively using the tool
 
         for tool_call in response.tool_calls:
             code_snippet = tool_call["args"].get("query", "")
-            repl_output = repl.invoke(code_snippet)
+            repl_output = repl.invoke(code_snippet) or "[Tool executed — no stdout]"
+            tool_call_count += 1
 
             log_entry = (
                 f"[TOOL: {tool_call['name']}]\n{code_snippet}\n[OUTPUT]\n{repl_output}"
@@ -263,9 +330,10 @@ def executive_presenter_node(state: AgentState) -> dict:
     # Slightly warmer temperature for natural prose, but still grounded (no hallucination)
     narrative_llm = ChatVertexAI(
         model=llm_model,
-        project=os.getenv("GOOGLE_CLOUD_PROJECT", "project-38d33c02-d4a0-425d-a92"),
-        location=os.getenv("GOOGLE_CLOUD_REGION", "us-central1"),
+        project="advisorai-62611",
+        location="us-central1",
         temperature=0.3,
+        max_retries=10,
     )
     narrative_response = narrative_llm.invoke([
         SystemMessage(content=_NARRATIVE_SYSTEM_PROMPT),

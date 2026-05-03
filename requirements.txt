@@ -6,19 +6,19 @@ python-multipart>=0.0.9
 
 # ── Agentic Framework ─────────────────────────────────────────────────────────
 langchain>=0.3.0
-langchain-google-genai>=4.2.0
+langchain-google-vertexai>=2.0.0
 langchain-community>=0.3.0
 langchain-experimental>=0.3.0
 langgraph>=0.2.0
 
 # ── LLM Providers ─────────────────────────────────────────────────────────────
-google-genai>=1.0.0
+google-cloud-aiplatform>=1.60.0
 huggingface-hub>=0.24.0
 transformers>=4.44.0
 
 # ── Data Science ──────────────────────────────────────────────────────────────
 pandas>=2.2.3
-numpy>=1.26.0,<2.0.0
+numpy>=2.0.0
 scikit-learn>=1.5.2
 matplotlib>=3.9.2
 seaborn>=0.13.2
