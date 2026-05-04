@@ -242,7 +242,7 @@ def data_engineer_node(state: AgentState, config: RunnableConfig = None) -> dict
 
         for tool_call in response.tool_calls:
             code_snippet = tool_call["args"].get("query", "")
-            repl_output = repl.invoke(code_snippet, config=config) or "[Tool executed — no stdout]"
+            repl_output = repl.invoke({"query": code_snippet}, config=config) or "[Tool executed — no stdout]"
             tool_call_count += 1
 
             log_entry = f"[TOOL: {tool_call['name']}]\n{code_snippet}\n[OUTPUT]\n{repl_output}"

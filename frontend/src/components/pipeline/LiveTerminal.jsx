@@ -19,17 +19,21 @@ const NODE_BORDER = {
   executive_presenter: 'border-purple-800',
 };
 
-const TOOL_PREFIX   = '[TOOL: python_repl_ast]\n';
-const OUTPUT_PREFIX = '[OUTPUT]\n';
+const TOOL_MARKER   = '[TOOL: python_repl_ast]';
+const OUTPUT_MARKER = '[OUTPUT]';
 
 function parseLogEntry(content) {
-  if (content.startsWith(TOOL_PREFIX)) {
-    return { kind: 'tool', code: content.slice(TOOL_PREFIX.length) };
+  const trimmed = content.trim();
+
+  if (trimmed.startsWith(TOOL_MARKER)) {
+    const code = trimmed.slice(TOOL_MARKER.length).replace(/^[\r\n]+/, '');
+    return { kind: 'tool', code };
   }
-  if (content.startsWith(OUTPUT_PREFIX)) {
-    return { kind: 'output', text: content.slice(OUTPUT_PREFIX.length) };
+  if (trimmed.startsWith(OUTPUT_MARKER)) {
+    const text = trimmed.slice(OUTPUT_MARKER.length).replace(/^[\r\n]+/, '');
+    return { kind: 'output', text };
   }
-  if (content.startsWith('[WARNING]') || content.startsWith('[ERROR]')) {
+  if (trimmed.startsWith('[WARNING]') || trimmed.startsWith('[ERROR]')) {
     return { kind: 'warning', text: content };
   }
   return { kind: 'plain', text: content };
