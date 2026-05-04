@@ -1,0 +1,15 @@
+{
+  "cleaning_steps": [
+    "Merge `olist_order_items_dataset` with `olist_products_dataset` on 'product_id' using a left join, assign to df. Then merge df with `olist_orders_dataset` on 'order_id' using a left join.",
+    "Drop rows in df where 'product_category_name' is null.",
+    "Create a new column 'total_revenue' in df by summing 'price' and 'freight_value'."
+  ],
+  "analysis_steps": [
+    "Calculate the total 'total_revenue' for each 'product_category_name'.",
+    "Sort product categories by 'total_revenue' in descending order and identify the top 10.",
+    "Generate a bar chart of the top 10 product categories by 'total_revenue'; save as 'top_10_product_categories_revenue.png'.",
+    "Calculate the total 'total_revenue' for each 'seller_id'.",
+    "Sort sellers by 'total_revenue' in descending order and identify the top 10.",
+    "Generate a bar chart of the top 10 sellers by 'total_revenue'; save as 'top_10_sellers_revenue.png'."
+  ]
+}

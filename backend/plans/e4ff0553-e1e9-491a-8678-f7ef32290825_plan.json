@@ -1,0 +1,17 @@
+{
+  "cleaning_steps": [
+    "Merge `olist_order_items_dataset` with `olist_products_dataset` on 'product_id' using a left join, assign to df. Then merge df with `olist_orders_dataset` on 'order_id' using an inner join.",
+    "Print the row count of the merged DataFrame `df`.",
+    "Fill missing values in 'product_category_name' in df with 'unknown'.",
+    "Filter df to include only rows where 'order_status' is 'delivered'.",
+    "Calculate a new column 'total_revenue' in df as the sum of 'price' and 'freight_value'."
+  ],
+  "analysis_steps": [
+    "Group df by 'product_category_name' and sum 'total_revenue' to find total revenue per category.",
+    "Identify the top 10 product categories by 'total_revenue'.",
+    "Generate a bar chart of the top 10 product categories by 'total_revenue'; save as 'top_10_product_categories_revenue.png'.",
+    "Group df by 'seller_id' and sum 'total_revenue' to find total revenue per seller.",
+    "Identify the top 10 sellers by 'total_revenue'.",
+    "Generate a bar chart of the top 10 sellers by 'total_revenue'; save as 'top_10_sellers_revenue.png'."
+  ]
+}

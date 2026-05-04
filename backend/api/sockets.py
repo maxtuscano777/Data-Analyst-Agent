@@ -5,15 +5,15 @@ Single channel per session: /ws/pipeline/{session_id}
 Lifecycle:
   1. Client POSTs to /upload → receives session_id.
   2. Client opens ws://host/ws/pipeline/{session_id}.
-  3. Server builds initial AgentState and calls graph.astream().
-  4. Server emits events as each node completes:
-       node_start  → signals node has begun (client shows spinner)
-       log         → one entry per execution_log line (client appends to terminal)
+  3. Server builds initial AgentState and calls graph.astream_events().
+  4. Server emits events as they happen inside each node:
+       node_start    → signals node has begun (client shows spinner)
+       log           → individual tool call or output (streams in real-time)
        node_complete → compact summary of node output (client updates dashboard)
-  5. graph.astream() exhausts when the graph hits interrupt_before=["executive_presenter"].
+  5. graph.astream_events() exhausts when interrupt_before=["executive_presenter"].
   6. Server emits hitl_pause with draft chart URLs and analysis insights.
   7. Client sends {"action": "approve"} or {"action": "revise", "feedback": "..."}.
-  8. Server resumes graph via graph.update_state() + graph.astream(None, ...).
+  8. Server resumes graph via graph.update_state() + graph.astream_events(None, ...).
   9. Server emits pipeline_complete with final chart URLs and executive Markdown.
 """
 
@@ -38,6 +38,9 @@ _NODE_DISPLAY: dict[str, str] = {
     "executive_presenter": "Executive Presenter",
 }
 
+# Set of node names to filter astream_events — avoids matching sub-chain events
+_AGENT_NODES: frozenset[str] = frozenset(_NODE_DISPLAY.keys())
+
 # Root of the charts directory — used to build relative /charts/... URLs
 _CHARTS_ROOT = Path(__file__).parent.parent / "charts"
 
@@ -47,9 +50,8 @@ _CHARTS_ROOT = Path(__file__).parent.parent / "charts"
 def _serialize_result(result: Any) -> dict:
     """Convert a Pydantic result model to a JSON-safe summary dict.
 
-    execution_log is excluded here — log entries are sent separately as
-    individual "log" WebSocket messages so the frontend can render them
-    incrementally without waiting for a large payload.
+    execution_log is excluded — log entries are sent as individual WebSocket
+    messages so the frontend can render them incrementally.
     """
     if isinstance(result, CleaningResult):
         return {
@@ -74,19 +76,30 @@ def _serialize_result(result: Any) -> dict:
     return {}
 
 
-def _chart_urls(chart_paths: list[str]) -> list[str]:
-    """Convert absolute PNG paths to relative /charts/... HTTP URLs.
+def _summary_from_output(output: dict) -> dict:
+    """Extract a compact node_complete summary from an on_chain_end output dict."""
+    for key in ("cleaning_result", "analysis_result", "presentation_result"):
+        obj = output.get(key)
+        if obj:
+            return _serialize_result(obj)
+    if output.get("plan"):
+        plan = output["plan"]
+        return {
+            "cleaning_steps": plan.get("cleaning_steps", []),
+            "analysis_steps": plan.get("analysis_steps", []),
+        }
+    return {}
 
-    The /charts static mount in main.py makes these paths directly fetchable
-    by the browser without a separate API endpoint.
-    """
+
+def _chart_urls(chart_paths: list[str]) -> list[str]:
+    """Convert absolute PNG paths to relative /charts/... HTTP URLs."""
     urls = []
     for p in chart_paths:
         try:
             rel = Path(p).relative_to(_CHARTS_ROOT)
             urls.append(f"/charts/{rel.as_posix()}")
         except ValueError:
-            urls.append(p)  # fallback: send raw absolute path
+            urls.append(p)
     return urls
 
 
@@ -126,61 +139,59 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
         # ── Phase 1: chief_planner → data_engineer → statistical_analyst ──────
         current_node: str | None = None
 
-        async for event in graph.astream(initial_state, config=config, stream_mode="updates"):
-            for node_name, updates in event.items():
-                if node_name.startswith("__"):  # skip LangGraph internal signals (__interrupt__, __end__, etc.)
-                    continue
+        async for event in graph.astream_events(initial_state, config=config, version="v2"):
+            kind = event["event"]
+            name = event.get("name", "")
+            data = event.get("data", {})
 
-                # Emit node_start on first update from a new node
-                if node_name != current_node:
-                    current_node = node_name
+            # Node begins — emit node_start once per node
+            if kind == "on_chain_start" and name in _AGENT_NODES and name != current_node:
+                current_node = name
+                await websocket.send_json({
+                    "type":         "node_start",
+                    "node":         name,
+                    "display_name": _NODE_DISPLAY[name],
+                })
+
+            # REPL tool call — stream the code as it's dispatched
+            elif kind == "on_tool_start" and name == "python_repl_ast":
+                raw_input = data.get("input", {})
+                code = (raw_input.get("query", "") if isinstance(raw_input, dict)
+                        else str(raw_input))
+                if code:
                     await websocket.send_json({
-                        "type":         "node_start",
-                        "node":         node_name,
-                        "display_name": _NODE_DISPLAY.get(node_name, node_name),
+                        "type":    "log",
+                        "node":    current_node,
+                        "content": f"[TOOL: python_repl_ast]\n{code}",
                     })
 
-                # Burst-send execution_log entries as individual log messages
-                for result_key in ("cleaning_result", "analysis_result", "presentation_result"):
-                    result_obj = updates.get(result_key)
-                    if result_obj and hasattr(result_obj, "execution_log"):
-                        for log_entry in result_obj.execution_log:
-                            await websocket.send_json({
-                                "type":    "log",
-                                "node":    node_name,
-                                "content": log_entry,
-                            })
+            # REPL tool output — stream the stdout immediately on return
+            elif kind == "on_tool_end" and name == "python_repl_ast":
+                output = str(data.get("output", "") or "[no output]")
+                await websocket.send_json({
+                    "type":    "log",
+                    "node":    current_node,
+                    "content": f"[OUTPUT]\n{output}",
+                })
 
-                # Build compact node_complete summary (no full log)
-                summary: dict = {}
-                for result_key in ("cleaning_result", "analysis_result", "presentation_result"):
-                    result_obj = updates.get(result_key)
-                    if result_obj:
-                        summary = _serialize_result(result_obj)
-
-                # plan is a plain dict — extract steps directly
-                if updates.get("plan"):
-                    summary = {
-                        "cleaning_steps": updates["plan"].get("cleaning_steps", []),
-                        "analysis_steps": updates["plan"].get("analysis_steps", []),
-                    }
-
+            # Node finished — emit compact summary
+            elif kind == "on_chain_end" and name in _AGENT_NODES:
+                summary = _summary_from_output(data.get("output") or {})
                 await websocket.send_json({
                     "type":    "node_complete",
-                    "node":    node_name,
+                    "node":    name,
                     "summary": summary,
                 })
 
         # ── HITL Checkpoint ───────────────────────────────────────────────────
-        # graph.astream() exhausts when interrupt_before=["executive_presenter"]
-        # halts execution. Confirm we're actually paused before proceeding.
+        # astream_events exhausts when interrupt_before=["executive_presenter"] fires.
         graph_state = graph.get_state(config)
         if "executive_presenter" not in (graph_state.next or []):
             session_store.update(session_id, {"status": "complete"})
             await websocket.send_json({"type": "pipeline_complete", "final_chart_paths": [], "executive_summary_md": ""})
+            await websocket.close(1000)
             return
 
-        # Pull draft charts + insights from the analyst result in the checkpoint
         analysis_result: AnalysisResult | None = graph_state.values.get("analysis_result")
         draft_chart_urls: list[str] = []
         insights: list[str] = []
@@ -219,36 +230,49 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
         session_store.update(session_id, {"status": "running"})
 
         # ── Phase 2: resume → executive_presenter ─────────────────────────────
-        async for event in graph.astream(None, config=config, stream_mode="updates"):
-            for node_name, updates in event.items():
-                if node_name.startswith("__"):  # skip LangGraph internal signals
-                    continue
+        async for event in graph.astream_events(None, config=config, version="v2"):
+            kind = event["event"]
+            name = event.get("name", "")
+            data = event.get("data", {})
 
-                if node_name != current_node:
-                    current_node = node_name
+            if kind == "on_chain_start" and name in _AGENT_NODES and name != current_node:
+                current_node = name
+                await websocket.send_json({
+                    "type":         "node_start",
+                    "node":         name,
+                    "display_name": _NODE_DISPLAY[name],
+                })
+
+            elif kind == "on_tool_start" and name == "python_repl_ast":
+                raw_input = data.get("input", {})
+                code = (raw_input.get("query", "") if isinstance(raw_input, dict)
+                        else str(raw_input))
+                if code:
                     await websocket.send_json({
-                        "type":         "node_start",
-                        "node":         node_name,
-                        "display_name": _NODE_DISPLAY.get(node_name, node_name),
+                        "type":    "log",
+                        "node":    current_node,
+                        "content": f"[TOOL: python_repl_ast]\n{code}",
                     })
 
-                result_obj = updates.get("presentation_result")
-                if result_obj and hasattr(result_obj, "execution_log"):
-                    for log_entry in result_obj.execution_log:
-                        await websocket.send_json({
-                            "type":    "log",
-                            "node":    node_name,
-                            "content": log_entry,
-                        })
+            elif kind == "on_tool_end" and name == "python_repl_ast":
+                output = str(data.get("output", "") or "[no output]")
+                await websocket.send_json({
+                    "type":    "log",
+                    "node":    current_node,
+                    "content": f"[OUTPUT]\n{output}",
+                })
 
-                if result_obj:
-                    summary = _serialize_result(result_obj)
-                    summary["final_chart_paths"] = _chart_urls(result_obj.final_chart_paths)
-                    await websocket.send_json({
-                        "type":    "node_complete",
-                        "node":    node_name,
-                        "summary": summary,
-                    })
+            elif kind == "on_chain_end" and name in _AGENT_NODES:
+                summary = _summary_from_output(data.get("output") or {})
+                # Remap final chart paths to HTTP URLs for the presenter
+                pres = (data.get("output") or {}).get("presentation_result")
+                if pres:
+                    summary["final_chart_paths"] = _chart_urls(pres.final_chart_paths)
+                await websocket.send_json({
+                    "type":    "node_complete",
+                    "node":    name,
+                    "summary": summary,
+                })
 
         # ── Pipeline complete ─────────────────────────────────────────────────
         final_state = graph.get_state(config)
@@ -260,6 +284,7 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
             "final_chart_paths":    _chart_urls(pres_result.final_chart_paths) if pres_result else [],
             "executive_summary_md": pres_result.executive_summary_md if pres_result else "",
         })
+        await websocket.close(1000)
 
     except WebSocketDisconnect:
         session_store.update(session_id, {"status": "error"})

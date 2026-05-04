@@ -24,6 +24,7 @@ from pathlib import Path
 
 from google.api_core.exceptions import InvalidArgument
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_experimental.tools import PythonAstREPLTool
 from langchain_google_vertexai import ChatVertexAI
 
@@ -265,7 +266,7 @@ def _extract_summary_json(log: str) -> dict | None:
 
 # ── LangGraph node ─────────────────────────────────────────────────────────────
 
-def statistical_analyst_node(state: AgentState) -> dict:
+def statistical_analyst_node(state: AgentState, config: RunnableConfig = None) -> dict:
     """LangGraph node: execute analysis_steps via PythonAstREPLTool.
 
     Reads from state:
@@ -377,7 +378,7 @@ def statistical_analyst_node(state: AgentState) -> dict:
                 )
                 continue
 
-            repl_output = repl.invoke(code_snippet) or "[Tool executed — no stdout]"
+            repl_output = repl.invoke(code_snippet, config=config) or "[Tool executed — no stdout]"
             tool_call_count += 1
 
             log_entry = (

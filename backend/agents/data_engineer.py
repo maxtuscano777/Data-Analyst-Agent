@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_experimental.tools import PythonAstREPLTool
 from langchain_google_vertexai import ChatVertexAI
 
@@ -139,7 +140,7 @@ Call python_repl_ast now to execute Block 1.\
 
 
 
-def data_engineer_node(state: AgentState) -> dict:
+def data_engineer_node(state: AgentState, config: RunnableConfig = None) -> dict:
     """LangGraph node: execute cleaning_steps via PythonAstREPLTool.
 
     Reads from state:
@@ -241,7 +242,7 @@ def data_engineer_node(state: AgentState) -> dict:
 
         for tool_call in response.tool_calls:
             code_snippet = tool_call["args"].get("query", "")
-            repl_output = repl.invoke(code_snippet) or "[Tool executed — no stdout]"
+            repl_output = repl.invoke(code_snippet, config=config) or "[Tool executed — no stdout]"
             tool_call_count += 1
 
             log_entry = f"[TOOL: {tool_call['name']}]\n{code_snippet}\n[OUTPUT]\n{repl_output}"
