@@ -1,0 +1,15 @@
+{
+  "cleaning_steps": [
+    "Merge `olist_order_items_dataset` with `olist_products_dataset` on 'product_id' using a left join, assign to df. Then merge df with `olist_orders_dataset` on 'order_id' using a left join.",
+    "Print the number of rows in the merged DataFrame.",
+    "Parse 'shipping_limit_date', 'order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date', 'order_delivered_customer_date', and 'order_estimated_delivery_date' columns in df as datetime64[ns]."
+  ],
+  "analysis_steps": [
+    "Calculate a new column 'profit_per_item' in df as 'price' - 'freight_value'.",
+    "Filter df to include only orders with 'delivered' status.",
+    "Calculate the total profit/loss for all delivered orders.",
+    "Group the delivered orders by 'product_category_name' and calculate the sum of 'profit_per_item' for each category.",
+    "Identify the top 5 and bottom 5 product categories based on total profit.",
+    "Generate a bar chart showing the total profit for the top 5 and bottom 5 product categories; save as 'profit_by_product_category.png'."
+  ]
+}

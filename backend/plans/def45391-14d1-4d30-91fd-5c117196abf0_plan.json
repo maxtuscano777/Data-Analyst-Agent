@@ -1,0 +1,16 @@
+{
+  "cleaning_steps": [
+    "Merge `olist_order_items_dataset` with `olist_orders_dataset` on 'order_id' using an inner join, assign to df. Then merge df with `olist_products_dataset` on 'product_id' using a left join.",
+    "Parse the 'order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date', 'order_delivered_customer_date', 'order_estimated_delivery_date', and 'shipping_limit_date' columns in df as datetime64[ns].",
+    "Create a new column 'total_revenue' in df by summing 'price' and 'freight_value'.",
+    "Create a new column 'delivery_delay' in df by subtracting 'order_estimated_delivery_date' from 'order_delivered_customer_date'."
+  ],
+  "analysis_steps": [
+    "On df, group by 'product_category_name', sum 'total_revenue', sort in descending order, and print the top 10 product categories by total revenue.",
+    "Generate a bar chart of the top 10 product categories by total revenue; save as 'top_revenue_categories.png'.",
+    "Convert the 'delivery_delay' column in df from timedelta to numeric days (float).",
+    "Calculate and print the mean, median, and standard deviation of the 'delivery_delay' column in df.",
+    "Calculate and print the percentage of orders in df where 'delivery_delay' is greater than 0 (i.e., delivered late).",
+    "Generate a histogram of the 'delivery_delay' column in df to visualize its distribution; save as 'delivery_delay_distribution.png'."
+  ]
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { BarChart3, CheckCircle2, RotateCcw, ScrollText } from 'lucide-react';
+import { BarChart3, CheckCircle2, RotateCcw, ScrollText, Clock, Loader2 } from 'lucide-react';
 import { usePipelineContext } from '../../context/PipelineContext';
+import { useHistory } from '../../hooks/useHistory';
 import ChartGallery from '../shared/ChartGallery';
 import ExecutiveSummary from './ExecutiveSummary';
 import NodeStatusBar from '../pipeline/NodeStatusBar';
@@ -26,11 +27,23 @@ function TabButton({ id, label, Icon, activeTab, onClick }) {
 
 export default function ResultView() {
   const { state, dispatch } = usePipelineContext();
-  const { result } = state;
+  const { loadHistory } = useHistory();
+  const { result, historySession } = state;
   const [tab, setTab] = useState('dashboard');
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const hasCharts  = result?.finalChartPaths?.length > 0;
   const hasSummary = Boolean(result?.executiveSummaryMd);
+
+  const handleBackToHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      await loadHistory();
+    } catch {
+      // If fetch fails, fall back to reset so user isn't stuck
+      dispatch({ type: 'RESET' });
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -46,6 +59,19 @@ export default function ResultView() {
               <CheckCircle2 size={13} />
               Pipeline complete
             </span>
+            {historySession && (
+              <button
+                onClick={handleBackToHistory}
+                disabled={isLoadingHistory}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700
+                  disabled:opacity-50 text-xs text-gray-400 transition-colors"
+              >
+                {isLoadingHistory
+                  ? <Loader2 size={12} className="animate-spin" />
+                  : <Clock size={12} />}
+                History
+              </button>
+            )}
             <button
               onClick={() => dispatch({ type: 'RESET' })}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700

@@ -1,19 +1,33 @@
 import { useState } from 'react';
-import { BarChart3, Loader2 } from 'lucide-react';
+import { BarChart3, Loader2, Clock } from 'lucide-react';
 import { usePipelineContext } from '../../context/PipelineContext';
+import { useHistory } from '../../hooks/useHistory';
 import { LLM_MODELS } from '../../lib/constants';
 import DropZone from './DropZone';
 import SetupForm from './SetupForm';
 
 export default function UploadView() {
   const { dispatch } = usePipelineContext();
+  const { loadHistory } = useHistory();
 
   const [files, setFiles] = useState([]);
   const [userQuery, setUserQuery] = useState('');
   const [domainContext, setDomainContext] = useState('');
   const [llmModel, setLlmModel] = useState(LLM_MODELS[0].value);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [error, setError] = useState(null);
+
+  const handleShowHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      await loadHistory();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
 
   const canSubmit = files.length > 0 && userQuery.trim().length > 0 && !isSubmitting;
 
@@ -46,11 +60,24 @@ export default function UploadView() {
     <div className="min-h-screen flex flex-col">
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <BarChart3 className="text-indigo-400" size={22} />
-          <span className="font-semibold tracking-tight">
-            ADAW — Autonomous Data Analyst Workspace
-          </span>
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <BarChart3 className="text-indigo-400" size={22} />
+            <span className="font-semibold tracking-tight">
+              ADAW — Autonomous Data Analyst Workspace
+            </span>
+          </div>
+          <button
+            onClick={handleShowHistory}
+            disabled={isLoadingHistory}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700
+              disabled:opacity-50 text-xs text-gray-400 transition-colors"
+          >
+            {isLoadingHistory
+              ? <Loader2 size={12} className="animate-spin" />
+              : <Clock size={12} />}
+            Past Runs
+          </button>
         </div>
       </header>
 

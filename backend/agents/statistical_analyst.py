@@ -378,7 +378,7 @@ def statistical_analyst_node(state: AgentState, config: RunnableConfig = None) -
                 )
                 continue
 
-            repl_output = repl.invoke(code_snippet, config=config) or "[Tool executed — no stdout]"
+            repl_output = repl.invoke({"query": code_snippet}, config=config) or "[Tool executed — no stdout]"
             tool_call_count += 1
 
             log_entry = (

@@ -15,6 +15,7 @@ Lifecycle:
   7. Client sends {"action": "approve"} or {"action": "revise", "feedback": "..."}.
   8. Server resumes graph via graph.update_state() + graph.astream_events(None, ...).
   9. Server emits pipeline_complete with final chart URLs and executive Markdown.
+ 10. Logs and results are batch-persisted to SQLite after the WebSocket closes.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.api import sessions as session_store
 from backend.agents.graph import graph
+from backend.db import database as db
 from backend.schemas.output_schemas import AnalysisResult, CleaningResult, PresentationResult
 
 router = APIRouter()
@@ -103,6 +105,34 @@ def _chart_urls(chart_paths: list[str]) -> list[str]:
     return urls
 
 
+def _extract_code(raw_input: Any) -> str:
+    """Recursively hunt for a Python code string in on_tool_start input data.
+
+    Handles all known LangGraph payload shapes:
+      - bare string
+      - {"query": "code"}  (standard PythonAstREPLTool schema)
+      - {"input": {"query": "code"}}  (double-nested)
+      - {"__arg1": "code"}  (positional arg encoding)
+      - any other dict — falls back to first non-empty string value
+    """
+    if raw_input is None:
+        return ""
+    if isinstance(raw_input, str):
+        return raw_input.strip()
+    if isinstance(raw_input, dict):
+        for key in ("query", "input", "code", "__arg1"):
+            val = raw_input.get(key)
+            if val:
+                result = _extract_code(val)
+                if result:
+                    return result
+        for val in raw_input.values():
+            result = _extract_code(val)
+            if result:
+                return result
+    return ""
+
+
 # ── WebSocket handler ──────────────────────────────────────────────────────────
 
 @router.websocket("/ws/pipeline/{session_id}")
@@ -135,6 +165,23 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
 
     session_store.update(session_id, {"status": "running"})
 
+    # ── Accumulators — populated during streaming, persisted at completion ──────
+    accumulated_logs:  list[dict] = []
+    accumulated_nodes: dict[str, dict] = {}
+
+    # ── Inner helpers: send + accumulate in one call ───────────────────────────
+    async def _log(node: str | None, content: str) -> None:
+        await websocket.send_json({"type": "log", "node": node, "content": content})
+        accumulated_logs.append({"node": node, "content": content})
+
+    async def _complete(node: str, summary: dict) -> None:
+        await websocket.send_json({"type": "node_complete", "node": node, "summary": summary})
+        accumulated_nodes[node] = {
+            "node_name": node,
+            "status":    "complete",
+            "summary":   json.dumps(summary),
+        }
+
     try:
         # ── Phase 1: chief_planner → data_engineer → statistical_analyst ──────
         current_node: str | None = None
@@ -153,38 +200,21 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
                     "display_name": _NODE_DISPLAY[name],
                 })
 
-            # REPL tool finished — emit code block then output block together
-            elif kind == "on_tool_end" and name == "python_repl_ast":
-                raw_input = data.get("input")
-                if isinstance(raw_input, dict):
-                    code = str(raw_input.get("query") or next(iter(raw_input.values()), ""))
-                elif raw_input is not None:
-                    code = str(raw_input)
-                else:
-                    code = ""
-
+            # REPL tool starting — extract and emit the code being executed
+            elif kind == "on_tool_start" and name == "python_repl_ast":
+                code = _extract_code(data.get("input"))
                 if code:
-                    await websocket.send_json({
-                        "type":    "log",
-                        "node":    current_node,
-                        "content": f"[TOOL: python_repl_ast]\n{code}",
-                    })
+                    await _log(current_node, f"[TOOL: python_repl_ast]\n{code}")
 
+            # REPL tool finished — emit stdout output
+            elif kind == "on_tool_end" and name == "python_repl_ast":
                 output = str(data.get("output", "") or "[no output]")
-                await websocket.send_json({
-                    "type":    "log",
-                    "node":    current_node,
-                    "content": f"[OUTPUT]\n{output}",
-                })
+                await _log(current_node, f"[OUTPUT]\n{output}")
 
             # Node finished — emit compact summary
             elif kind == "on_chain_end" and name in _AGENT_NODES:
                 summary = _summary_from_output(data.get("output") or {})
-                await websocket.send_json({
-                    "type":    "node_complete",
-                    "node":    name,
-                    "summary": summary,
-                })
+                await _complete(name, summary)
 
         # ── HITL Checkpoint ───────────────────────────────────────────────────
         # astream_events exhausts when interrupt_before=["executive_presenter"] fires.
@@ -193,6 +223,12 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
             session_store.update(session_id, {"status": "complete"})
             await websocket.send_json({"type": "pipeline_complete", "final_chart_paths": [], "executive_summary_md": ""})
             await websocket.close(1000)
+            try:
+                await db.update_session(session_id, status="complete", final_chart_paths="[]", executive_summary_md="")
+                await db.save_logs(session_id, accumulated_logs)
+                await db.save_nodes(session_id, list(accumulated_nodes.values()))
+            except Exception:
+                pass
             return
 
         analysis_result: AnalysisResult | None = graph_state.values.get("analysis_result")
@@ -246,28 +282,14 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
                     "display_name": _NODE_DISPLAY[name],
                 })
 
-            elif kind == "on_tool_end" and name == "python_repl_ast":
-                raw_input = data.get("input")
-                if isinstance(raw_input, dict):
-                    code = str(raw_input.get("query") or next(iter(raw_input.values()), ""))
-                elif raw_input is not None:
-                    code = str(raw_input)
-                else:
-                    code = ""
-
+            elif kind == "on_tool_start" and name == "python_repl_ast":
+                code = _extract_code(data.get("input"))
                 if code:
-                    await websocket.send_json({
-                        "type":    "log",
-                        "node":    current_node,
-                        "content": f"[TOOL: python_repl_ast]\n{code}",
-                    })
+                    await _log(current_node, f"[TOOL: python_repl_ast]\n{code}")
 
+            elif kind == "on_tool_end" and name == "python_repl_ast":
                 output = str(data.get("output", "") or "[no output]")
-                await websocket.send_json({
-                    "type":    "log",
-                    "node":    current_node,
-                    "content": f"[OUTPUT]\n{output}",
-                })
+                await _log(current_node, f"[OUTPUT]\n{output}")
 
             elif kind == "on_chain_end" and name in _AGENT_NODES:
                 summary = _summary_from_output(data.get("output") or {})
@@ -275,23 +297,35 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
                 pres = (data.get("output") or {}).get("presentation_result")
                 if pres:
                     summary["final_chart_paths"] = _chart_urls(pres.final_chart_paths)
-                await websocket.send_json({
-                    "type":    "node_complete",
-                    "node":    name,
-                    "summary": summary,
-                })
+                await _complete(name, summary)
 
         # ── Pipeline complete ─────────────────────────────────────────────────
         final_state = graph.get_state(config)
         pres_result: PresentationResult | None = final_state.values.get("presentation_result")
 
+        final_chart_paths_http = _chart_urls(pres_result.final_chart_paths) if pres_result else []
+        exec_summary_md = pres_result.executive_summary_md if pres_result else ""
+
         session_store.update(session_id, {"status": "complete"})
         await websocket.send_json({
             "type":                 "pipeline_complete",
-            "final_chart_paths":    _chart_urls(pres_result.final_chart_paths) if pres_result else [],
-            "executive_summary_md": pres_result.executive_summary_md if pres_result else "",
+            "final_chart_paths":    final_chart_paths_http,
+            "executive_summary_md": exec_summary_md,
         })
         await websocket.close(1000)
+
+        # Persist to DB after WebSocket close — failure here is non-critical
+        try:
+            await db.update_session(
+                session_id,
+                status="complete",
+                final_chart_paths=json.dumps(final_chart_paths_http),
+                executive_summary_md=exec_summary_md,
+            )
+            await db.save_logs(session_id, accumulated_logs)
+            await db.save_nodes(session_id, list(accumulated_nodes.values()))
+        except Exception:
+            pass
 
     except WebSocketDisconnect:
         session_store.update(session_id, {"status": "error"})
@@ -300,5 +334,9 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
         session_store.update(session_id, {"status": "error"})
         try:
             await websocket.send_json({"type": "error", "message": str(exc)})
+        except Exception:
+            pass
+        try:
+            await db.update_session(session_id, status="error")
         except Exception:
             pass

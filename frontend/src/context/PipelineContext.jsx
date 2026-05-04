@@ -11,14 +11,16 @@ const initialNodeList = PIPELINE_NODES.map((name) => ({
 }));
 
 const initialState = {
-  phase:       'idle',   // 'idle' | 'running' | 'hitl_paused' | 'complete' | 'error'
-  sessionId:   null,
-  nodes:       initialNodeList,
-  logs:        [],
-  currentNode: null,
-  hitl:        null,     // { charts, insights, modelEvaluations }
-  result:      null,     // { finalChartPaths, executiveSummaryMd }
-  error:       null,
+  phase:          'idle',   // 'idle' | 'running' | 'hitl_paused' | 'complete' | 'error' | 'history'
+  sessionId:      null,
+  nodes:          initialNodeList,
+  logs:           [],
+  currentNode:    null,
+  hitl:           null,     // { charts, insights, modelEvaluations }
+  result:         null,     // { finalChartPaths, executiveSummaryMd }
+  error:          null,
+  historyList:    [],       // list of session metadata objects from GET /sessions
+  historySession: null,     // session_id string when viewing a past run; null for live
 };
 
 // ── Reducer ────────────────────────────────────────────────────────────────────
@@ -28,14 +30,15 @@ function pipelineReducer(state, { type, payload }) {
     case 'SESSION_CREATED':
       return {
         ...state,
-        phase:     'running',
-        sessionId: payload.sessionId,
-        nodes:     initialNodeList,
-        logs:      [],
-        currentNode: null,
-        hitl:      null,
-        result:    null,
-        error:     null,
+        phase:          'running',
+        sessionId:      payload.sessionId,
+        nodes:          initialNodeList,
+        logs:           [],
+        currentNode:    null,
+        hitl:           null,
+        result:         null,
+        error:          null,
+        historySession: null,
       };
 
     case 'NODE_START':
@@ -43,9 +46,7 @@ function pipelineReducer(state, { type, payload }) {
         ...state,
         currentNode: payload.node,
         nodes: state.nodes.map((n) =>
-          n.name === payload.node
-            ? { ...n, status: 'running' }
-            : n
+          n.name === payload.node ? { ...n, status: 'running' } : n
         ),
       };
 
@@ -100,6 +101,42 @@ function pipelineReducer(state, { type, payload }) {
         phase: 'error',
         error: payload.message || 'An unknown pipeline error occurred.',
       };
+
+    // ── History actions ────────────────────────────────────────────────────────
+
+    case 'HISTORY_LOADED':
+      return {
+        ...state,
+        phase:       'history',
+        historyList: payload.sessions,
+      };
+
+    case 'HISTORY_SESSION_LOADED': {
+      // Merge persisted node data back into initialNodeList (preserves order + displayName)
+      const nodeMap = {};
+      for (const n of (payload.nodes || [])) {
+        nodeMap[n.node_name] = n;
+      }
+      const nodes = initialNodeList.map((n) => {
+        const hist = nodeMap[n.name];
+        return hist ? { ...n, status: hist.status, summary: hist.summary } : n;
+      });
+      return {
+        ...state,
+        phase:          'complete',
+        sessionId:      payload.session_id,
+        historySession: payload.session_id,
+        currentNode:    null,
+        hitl:           null,
+        error:          null,
+        logs:           payload.logs || [],
+        nodes,
+        result: {
+          finalChartPaths:    payload.final_chart_paths    || [],
+          executiveSummaryMd: payload.executive_summary_md || '',
+        },
+      };
+    }
 
     case 'RESET':
       return { ...initialState, nodes: initialNodeList };

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -12,10 +13,19 @@ from fastapi.staticfiles import StaticFiles
 from backend.api import sessions as session_store
 from backend.api.data_profiler import generate_multi_file_profile
 from backend.api.sockets import router as ws_router
+from backend.db import database as db
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await db.init_db()
+    yield
+
 
 app = FastAPI(
     title="ADAW — Autonomous B2B Data Analyst Workspace",
-    version="0.2.0",
+    version="0.3.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -30,9 +40,9 @@ app.add_middleware(
 app.include_router(ws_router)
 
 # ── Directory constants ────────────────────────────────────────────────────────
-_BACKEND_DIR   = Path(__file__).parent.parent
+_BACKEND_DIR     = Path(__file__).parent.parent
 _RAW_UPLOADS_DIR = _BACKEND_DIR / "uploads" / "raw"
-_CHARTS_DIR    = _BACKEND_DIR / "charts"
+_CHARTS_DIR      = _BACKEND_DIR / "charts"
 
 
 # ── REST Endpoints ─────────────────────────────────────────────────────────────
@@ -52,8 +62,8 @@ async def upload_files(
     """Accept one or more CSV/Excel files and the user's business goal.
 
     Saves each file to a session-scoped subdirectory under uploads/raw/,
-    profiles the data (no LLM), stores the session in memory, and returns
-    the session_id + data profile so the client can open the WebSocket.
+    profiles the data (no LLM), stores the session in memory and in SQLite,
+    and returns the session_id + data profile so the client can open the WebSocket.
     """
     session_id = str(uuid.uuid4())
     session_dir = _RAW_UPLOADS_DIR / session_id
@@ -65,6 +75,8 @@ async def upload_files(
         with dest.open("wb") as f:
             shutil.copyfileobj(upload.file, f)
         upload_paths.append(str(dest))
+
+    file_names = [Path(p).name for p in upload_paths]
 
     # Profile all uploaded files (pure pandas — no LLM)
     data_profile = generate_multi_file_profile(upload_paths)
@@ -79,25 +91,49 @@ async def upload_files(
         "status":         "uploaded",
     })
 
+    # Persist metadata to SQLite so it survives server restarts
+    await db.create_session(
+        session_id=session_id,
+        user_query=user_query,
+        domain_context=domain_context,
+        llm_model=llm_model,
+        file_names=file_names,
+    )
+
     return {
         "session_id":   session_id,
-        "file_names":   [Path(p).name for p in upload_paths],
+        "file_names":   file_names,
         "data_profile": data_profile,
     }
 
 
 @app.get("/session/{session_id}")
 async def get_session(session_id: str):
-    """Return the current status and metadata of a session."""
+    """Return the current status and metadata of an active session."""
     session = session_store.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return {
-        "session_id":  session["session_id"],
-        "status":      session["status"],
-        "file_names":  [Path(p).name for p in session["upload_paths"]],
-        "user_query":  session["user_query"],
+        "session_id": session["session_id"],
+        "status":     session["status"],
+        "file_names": [Path(p).name for p in session["upload_paths"]],
+        "user_query": session["user_query"],
     }
+
+
+@app.get("/sessions")
+async def list_sessions():
+    """Return all past sessions ordered newest-first (metadata only, no logs)."""
+    return await db.list_sessions()
+
+
+@app.get("/sessions/{session_id}")
+async def get_session_history(session_id: str):
+    """Return full session data including logs and node records for history replay."""
+    session = await db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found in history")
+    return session
 
 
 # ── Static file mounts ────────────────────────────────────────────────────────
