@@ -94,6 +94,7 @@ function pipelineReducer(state, { type, payload }) {
       };
 
     case 'WS_ERROR':
+      if (state.phase === 'complete') return state;
       return {
         ...state,
         phase: 'error',

@@ -1,9 +1,10 @@
 import { useRef } from 'react';
 import { Terminal } from 'lucide-react';
+import SyntaxHighlighter from 'react-syntax-highlighter/dist/esm/prism';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { usePipelineContext } from '../../context/PipelineContext';
 import { useAutoScroll } from '../../hooks/useAutoScroll';
 
-// Per-agent accent colours so log sections are visually distinct
 const NODE_COLOR = {
   chief_planner:       'text-cyan-400',
   data_engineer:       'text-amber-400',
@@ -11,12 +12,84 @@ const NODE_COLOR = {
   executive_presenter: 'text-purple-400',
 };
 
-// Lines that act as structural headers inside a log entry
-const isHeaderLine = (line) =>
-  line.startsWith('[TOOL:') ||
-  line.startsWith('[OUTPUT]') ||
-  line.startsWith('[WARNING]') ||
-  line.startsWith('[ERROR]');
+const NODE_BORDER = {
+  chief_planner:       'border-cyan-800',
+  data_engineer:       'border-amber-800',
+  statistical_analyst: 'border-emerald-800',
+  executive_presenter: 'border-purple-800',
+};
+
+const TOOL_PREFIX   = '[TOOL: python_repl_ast]\n';
+const OUTPUT_PREFIX = '[OUTPUT]\n';
+
+function parseLogEntry(content) {
+  if (content.startsWith(TOOL_PREFIX)) {
+    return { kind: 'tool', code: content.slice(TOOL_PREFIX.length) };
+  }
+  if (content.startsWith(OUTPUT_PREFIX)) {
+    return { kind: 'output', text: content.slice(OUTPUT_PREFIX.length) };
+  }
+  if (content.startsWith('[WARNING]') || content.startsWith('[ERROR]')) {
+    return { kind: 'warning', text: content };
+  }
+  return { kind: 'plain', text: content };
+}
+
+function LogEntry({ entry }) {
+  const accentClass  = NODE_COLOR[entry.node]  ?? 'text-gray-400';
+  const borderClass  = NODE_BORDER[entry.node] ?? 'border-gray-800';
+  const parsed = parseLogEntry(entry.content);
+
+  return (
+    <div className={`mb-3 border-l-2 ${borderClass} pl-3`}>
+      {parsed.kind === 'tool' && (
+        <div>
+          <div className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ${accentClass}`}>
+            python
+          </div>
+          <SyntaxHighlighter
+            language="python"
+            style={vscDarkPlus}
+            customStyle={{
+              margin: 0,
+              padding: '10px 12px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              lineHeight: '1.6',
+              background: '#1e1e2e',
+            }}
+            wrapLongLines
+          >
+            {parsed.code}
+          </SyntaxHighlighter>
+        </div>
+      )}
+
+      {parsed.kind === 'output' && (
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-600 mb-1">
+            stdout
+          </div>
+          <pre className="text-emerald-300/80 whitespace-pre-wrap break-words text-xs leading-relaxed bg-gray-950 rounded-md px-3 py-2 border border-gray-800">
+            {parsed.text}
+          </pre>
+        </div>
+      )}
+
+      {parsed.kind === 'warning' && (
+        <div className="text-amber-400 whitespace-pre-wrap break-words">
+          {parsed.text}
+        </div>
+      )}
+
+      {parsed.kind === 'plain' && (
+        <div className="text-gray-400 whitespace-pre-wrap break-words">
+          {parsed.text}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function LiveTerminal() {
   const { state } = usePipelineContext();
@@ -48,24 +121,7 @@ export default function LiveTerminal() {
         {logs.length === 0 ? (
           <span className="text-gray-700">Waiting for agent output…</span>
         ) : (
-          logs.map((entry, i) => {
-            const accentClass = NODE_COLOR[entry.node] ?? 'text-gray-400';
-            const lines = entry.content.split('\n');
-
-            return (
-              <div key={i} className="mb-3 border-l-2 border-gray-800 pl-3">
-                {lines.map((line, j) =>
-                  isHeaderLine(line) ? (
-                    <div key={j} className={`font-bold ${accentClass}`}>{line}</div>
-                  ) : (
-                    <div key={j} className="text-gray-300 whitespace-pre-wrap break-words">
-                      {line}
-                    </div>
-                  )
-                )}
-              </div>
-            );
-          })
+          logs.map((entry, i) => <LogEntry key={i} entry={entry} />)
         )}
       </div>
     </div>

@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_experimental.tools import PythonAstREPLTool
 from langchain_google_vertexai import ChatVertexAI
 
@@ -200,7 +201,7 @@ def _build_narrative_human(
 
 # ── LangGraph node ─────────────────────────────────────────────────────────────
 
-def executive_presenter_node(state: AgentState) -> dict:
+def executive_presenter_node(state: AgentState, config: RunnableConfig = None) -> dict:
     """LangGraph node: generate final charts and executive Markdown summary.
 
     Must only execute after hitl_approved=True (enforced by graph interrupt_before).
@@ -297,7 +298,7 @@ def executive_presenter_node(state: AgentState) -> dict:
 
         for tool_call in response.tool_calls:
             code_snippet = tool_call["args"].get("query", "")
-            repl_output = repl.invoke(code_snippet) or "[Tool executed — no stdout]"
+            repl_output = repl.invoke(code_snippet, config=config) or "[Tool executed — no stdout]"
             tool_call_count += 1
 
             log_entry = (
