@@ -153,11 +153,16 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
                     "display_name": _NODE_DISPLAY[name],
                 })
 
-            # REPL tool call — stream the code as it's dispatched
-            elif kind == "on_tool_start" and name == "python_repl_ast":
-                raw_input = data.get("input", {})
-                code = (raw_input.get("query", "") if isinstance(raw_input, dict)
-                        else str(raw_input))
+            # REPL tool finished — emit code block then output block together
+            elif kind == "on_tool_end" and name == "python_repl_ast":
+                raw_input = data.get("input")
+                if isinstance(raw_input, dict):
+                    code = str(raw_input.get("query") or next(iter(raw_input.values()), ""))
+                elif raw_input is not None:
+                    code = str(raw_input)
+                else:
+                    code = ""
+
                 if code:
                     await websocket.send_json({
                         "type":    "log",
@@ -165,8 +170,6 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
                         "content": f"[TOOL: python_repl_ast]\n{code}",
                     })
 
-            # REPL tool output — stream the stdout immediately on return
-            elif kind == "on_tool_end" and name == "python_repl_ast":
                 output = str(data.get("output", "") or "[no output]")
                 await websocket.send_json({
                     "type":    "log",
@@ -243,10 +246,15 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
                     "display_name": _NODE_DISPLAY[name],
                 })
 
-            elif kind == "on_tool_start" and name == "python_repl_ast":
-                raw_input = data.get("input", {})
-                code = (raw_input.get("query", "") if isinstance(raw_input, dict)
-                        else str(raw_input))
+            elif kind == "on_tool_end" and name == "python_repl_ast":
+                raw_input = data.get("input")
+                if isinstance(raw_input, dict):
+                    code = str(raw_input.get("query") or next(iter(raw_input.values()), ""))
+                elif raw_input is not None:
+                    code = str(raw_input)
+                else:
+                    code = ""
+
                 if code:
                     await websocket.send_json({
                         "type":    "log",
@@ -254,7 +262,6 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
                         "content": f"[TOOL: python_repl_ast]\n{code}",
                     })
 
-            elif kind == "on_tool_end" and name == "python_repl_ast":
                 output = str(data.get("output", "") or "[no output]")
                 await websocket.send_json({
                     "type":    "log",
