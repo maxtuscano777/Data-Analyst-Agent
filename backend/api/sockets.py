@@ -10,10 +10,12 @@ Lifecycle:
        node_start    → signals node has begun (client shows spinner)
        log           → individual tool call or output (streams in real-time)
        node_complete → compact summary of node output (client updates dashboard)
-  5. graph.astream_events() exhausts when interrupt_before=["executive_presenter"].
+  5. graph.astream_events() exhausts when interrupt_before=["hitl_router"] fires.
   6. Server emits hitl_pause with draft chart URLs and analysis insights.
   7. Client sends {"action": "approve"} or {"action": "revise", "feedback": "..."}.
   8. Server resumes graph via graph.update_state() + graph.astream_events(None, ...).
+     On "revise", the conditional edge routes back to chief_planner; Phase 2 loops
+     until the user approves, then the executive_presenter runs to completion.
   9. Server emits pipeline_complete with final chart URLs and executive Markdown.
  10. Logs and results are batch-persisted to SQLite after the WebSocket closes.
 """
@@ -217,9 +219,9 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
                 await _complete(name, summary)
 
         # ── HITL Checkpoint ───────────────────────────────────────────────────
-        # astream_events exhausts when interrupt_before=["executive_presenter"] fires.
+        # astream_events exhausts when interrupt_before=["hitl_router"] fires.
         graph_state = graph.get_state(config)
-        if "executive_presenter" not in (graph_state.next or []):
+        if "hitl_router" not in (graph_state.next or []):
             session_store.update(session_id, {"status": "complete"})
             await websocket.send_json({"type": "pipeline_complete", "final_chart_paths": [], "executive_summary_md": ""})
             await websocket.close(1000)
@@ -268,36 +270,82 @@ async def ws_pipeline(websocket: WebSocket, session_id: str):
 
         session_store.update(session_id, {"status": "running"})
 
-        # ── Phase 2: resume → executive_presenter ─────────────────────────────
-        async for event in graph.astream_events(None, config=config, version="v2"):
-            kind = event["event"]
-            name = event.get("name", "")
-            data = event.get("data", {})
+        # ── Phase 2: resume loop ───────────────────────────────────────────────
+        # On "approve" this runs once (chief_planner is skipped, executive_presenter
+        # runs, loop exits). On "revise" the conditional edge routes back to
+        # chief_planner; the loop detects the second hitl_router pause, sends
+        # another hitl_pause event, and awaits the next user decision — repeating
+        # until the user approves.
+        while True:
+            async for event in graph.astream_events(None, config=config, version="v2"):
+                kind = event["event"]
+                name = event.get("name", "")
+                data = event.get("data", {})
 
-            if kind == "on_chain_start" and name in _AGENT_NODES and name != current_node:
-                current_node = name
+                if kind == "on_chain_start" and name in _AGENT_NODES and name != current_node:
+                    current_node = name
+                    await websocket.send_json({
+                        "type":         "node_start",
+                        "node":         name,
+                        "display_name": _NODE_DISPLAY[name],
+                    })
+
+                elif kind == "on_tool_start" and name == "python_repl_ast":
+                    code = _extract_code(data.get("input"))
+                    if code:
+                        await _log(current_node, f"[TOOL: python_repl_ast]\n{code}")
+
+                elif kind == "on_tool_end" and name == "python_repl_ast":
+                    output = str(data.get("output", "") or "[no output]")
+                    await _log(current_node, f"[OUTPUT]\n{output}")
+
+                elif kind == "on_chain_end" and name in _AGENT_NODES:
+                    summary = _summary_from_output(data.get("output") or {})
+                    pres = (data.get("output") or {}).get("presentation_result")
+                    if pres:
+                        summary["final_chart_paths"] = _chart_urls(pres.final_chart_paths)
+                    await _complete(name, summary)
+
+            # Check whether the graph paused at hitl_router again (revision cycle)
+            mid_state = graph.get_state(config)
+            if "hitl_router" not in (mid_state.next or []):
+                break  # executive_presenter completed — exit loop
+
+            # Revision cycle: send fresh hitl_pause and await another user decision
+            revised_analysis: AnalysisResult | None = mid_state.values.get("analysis_result")
+            revised_chart_urls: list[str] = []
+            revised_insights: list[str] = []
+            revised_evals: list[dict] = []
+            if revised_analysis:
+                revised_chart_urls = _chart_urls(revised_analysis.draft_chart_paths)
+                revised_insights = revised_analysis.insights
+                revised_evals = [me.model_dump() for me in revised_analysis.model_evaluations]
+
+            session_store.update(session_id, {"status": "hitl_paused"})
+            await websocket.send_json({
+                "type":              "hitl_pause",
+                "charts":            revised_chart_urls,
+                "insights":          revised_insights,
+                "model_evaluations": revised_evals,
+            })
+
+            raw = await websocket.receive_text()
+            payload = json.loads(raw)
+            action = payload.get("action")
+
+            if action == "approve":
+                graph.update_state(config, {"hitl_approved": True, "hitl_feedback": None})
+            elif action == "revise":
+                feedback = payload.get("feedback", "")
+                graph.update_state(config, {"hitl_approved": True, "hitl_feedback": feedback})
+            else:
                 await websocket.send_json({
-                    "type":         "node_start",
-                    "node":         name,
-                    "display_name": _NODE_DISPLAY[name],
+                    "type":    "error",
+                    "message": f"Unknown HITL action '{action}'. Expected 'approve' or 'revise'.",
                 })
+                return
 
-            elif kind == "on_tool_start" and name == "python_repl_ast":
-                code = _extract_code(data.get("input"))
-                if code:
-                    await _log(current_node, f"[TOOL: python_repl_ast]\n{code}")
-
-            elif kind == "on_tool_end" and name == "python_repl_ast":
-                output = str(data.get("output", "") or "[no output]")
-                await _log(current_node, f"[OUTPUT]\n{output}")
-
-            elif kind == "on_chain_end" and name in _AGENT_NODES:
-                summary = _summary_from_output(data.get("output") or {})
-                # Remap final chart paths to HTTP URLs for the presenter
-                pres = (data.get("output") or {}).get("presentation_result")
-                if pres:
-                    summary["final_chart_paths"] = _chart_urls(pres.final_chart_paths)
-                await _complete(name, summary)
+            session_store.update(session_id, {"status": "running"})
 
         # ── Pipeline complete ─────────────────────────────────────────────────
         final_state = graph.get_state(config)
