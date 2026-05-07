@@ -1,0 +1,62 @@
+[WARNING] No tool call on turn 1 — injecting reprompt (1/5).
+
+[TOOL: python_repl_ast]
+import matplotlib
+matplotlib.use('Agg')
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+import os
+
+sns.set_theme(style='whitegrid', palette='muted')
+os.makedirs(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/final/37f8fe00-f244-434b-97eb-9802f9947f24", exist_ok=True)
+df = pd.read_csv(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/37f8fe00-f244-434b-97eb-9802f9947f24/cleaned_data.csv")
+print(f"Loaded {df.shape[0]} rows x {df.shape[1]} columns")
+[OUTPUT]
+Loaded 111047 rows x 16 columns
+
+
+[TOOL: python_repl_ast]
+product_category_revenue = df.groupby('product_category_name')['price'].sum().sort_values(ascending=False).head(10)
+
+plt.figure(figsize=(12, 8))
+sns.barplot(x=product_category_revenue.values, y=product_category_revenue.index, hue=product_category_revenue.index, palette='muted', legend=False)
+plt.title('Top 10 Product Categories by Total Revenue', fontsize=16)
+plt.xlabel('Total Revenue', fontsize=12)
+plt.ylabel('Product Category', fontsize=12)
+plt.xticks(fontsize=10)
+plt.yticks(fontsize=10)
+
+for index, value in enumerate(product_category_revenue.values):
+    plt.text(value, index, f'{value:,.2f}', va='center', ha='left', fontsize=10)
+
+plt.tight_layout()
+plt.savefig(r'/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/final/37f8fe00-f244-434b-97eb-9802f9947f24/top_product_categories_revenue.png')
+plt.close('all')
+print('Chart saved: top_product_categories_revenue.png')
+[OUTPUT]
+Chart saved: top_product_categories_revenue.png
+
+
+[TOOL: python_repl_ast]
+seller_revenue = df.groupby('seller_id')['price'].sum().sort_values(ascending=False).head(10)
+
+plt.figure(figsize=(12, 8))
+sns.barplot(x=seller_revenue.values, y=seller_revenue.index, hue=seller_revenue.index, palette='muted', legend=False)
+plt.title('Top 10 Sellers by Total Revenue', fontsize=16)
+plt.xlabel('Total Revenue', fontsize=12)
+plt.ylabel('Seller ID', fontsize=12)
+plt.xticks(fontsize=10)
+plt.yticks(fontsize=10)
+
+for index, value in enumerate(seller_revenue.values):
+    plt.text(value, index, f'{value:,.2f}', va='center', ha='left', fontsize=10)
+
+plt.tight_layout()
+plt.savefig(r'/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/final/37f8fe00-f244-434b-97eb-9802f9947f24/top_sellers_revenue.png')
+plt.close('all')
+print('Chart saved: top_sellers_revenue.png')
+[OUTPUT]
+Chart saved: top_sellers_revenue.png

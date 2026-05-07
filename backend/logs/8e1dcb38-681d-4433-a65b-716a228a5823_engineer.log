@@ -1,0 +1,64 @@
+[TOOL: python_repl_ast]
+import pandas as pd
+olist_orders_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/8e1dcb38-681d-4433-a65b-716a228a5823/olist_orders_dataset.csv")
+olist_order_items_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/8e1dcb38-681d-4433-a65b-716a228a5823/olist_order_items_dataset.csv")
+olist_products_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/8e1dcb38-681d-4433-a65b-716a228a5823/olist_products_dataset.csv")
+print("All files loaded.")
+[OUTPUT]
+All files loaded.
+
+
+[TOOL: python_repl_ast]
+df = pd.merge(olist_order_items_dataset, olist_products_dataset, on='product_id', how='left')
+df = pd.merge(df, olist_orders_dataset, on='order_id', how='inner')
+print("Step 1 done")
+[OUTPUT]
+Step 1 done
+
+
+[TOOL: python_repl_ast]
+df['shipping_limit_date'] = pd.to_datetime(df['shipping_limit_date'], errors='coerce')
+df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'], errors='coerce')
+df['order_approved_at'] = pd.to_datetime(df['order_approved_at'], errors='coerce')
+df['order_delivered_carrier_date'] = pd.to_datetime(df['order_delivered_carrier_date'], errors='coerce')
+df['order_delivered_customer_date'] = pd.to_datetime(df['order_delivered_customer_date'], errors='coerce')
+df['order_estimated_delivery_date'] = pd.to_datetime(df['order_estimated_delivery_date'], errors='coerce')
+print("Step 2 done")
+[OUTPUT]
+Step 2 done
+
+
+[TOOL: python_repl_ast]
+df = df[df['order_status'] == 'delivered']
+print("Step 3 done")
+[OUTPUT]
+Step 3 done
+
+
+[TOOL: python_repl_ast]
+df['product_category_name'] = df['product_category_name'].fillna('unknown')
+print("Step 4 done")
+[OUTPUT]
+Step 4 done
+
+
+[TOOL: python_repl_ast]
+df['total_revenue'] = df['price'] + df['freight_value']
+print("Step 5 done")
+[OUTPUT]
+Step 5 done
+
+
+[TOOL: python_repl_ast]
+df.to_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/8e1dcb38-681d-4433-a65b-716a228a5823/cleaned_data.csv", index=False)
+print("Saved.")
+[OUTPUT]
+OSError: Cannot save file into a non-existent directory: '/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/8e1dcb38-681d-4433-a65b-716a228a5823'
+
+[TOOL: python_repl_ast]
+import os
+os.makedirs("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/8e1dcb38-681d-4433-a65b-716a228a5823", exist_ok=True)
+df.to_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/8e1dcb38-681d-4433-a65b-716a228a5823/cleaned_data.csv", index=False)
+print("Saved.")
+[OUTPUT]
+Saved.

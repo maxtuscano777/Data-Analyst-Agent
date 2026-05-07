@@ -1,0 +1,42 @@
+[WARNING] No tool call on turn 1 — injecting reprompt (1/5).
+
+[WARNING] No tool call on turn 2 — injecting reprompt (2/5).
+
+[TOOL: python_repl_ast]
+import matplotlib
+matplotlib.use('Agg')
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+import os
+
+sns.set_theme(style='whitegrid', palette='muted')
+os.makedirs(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/final/8e1dcb38-681d-4433-a65b-716a228a5823", exist_ok=True)
+df = pd.read_csv(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/8e1dcb38-681d-4433-a65b-716a228a5823/cleaned_data.csv")
+print(f"Loaded {df.shape[0]} rows x {df.shape[1]} columns")
+[OUTPUT]
+Loaded 110197 rows x 23 columns
+
+
+[TOOL: python_repl_ast]
+revenue_by_category = df.groupby('product_category_name')['price'].sum().sort_values(ascending=False)
+top_10_categories = revenue_by_category.head(10)
+
+plt.figure(figsize=(12, 8))
+sns.barplot(x=top_10_categories.index, y=top_10_categories.values, hue=top_10_categories.index, palette='muted', legend=False)
+plt.title('Top 10 Product Categories by Total Revenue', fontsize=16)
+plt.xlabel('Product Category', fontsize=12)
+plt.ylabel('Total Revenue ($)', fontsize=12)
+plt.xticks(rotation=45, ha='right')
+
+for index, value in enumerate(top_10_categories.values):
+    plt.text(index, value, f'${value:,.2f}', color='black', ha='center', va='bottom', fontsize=10)
+
+plt.tight_layout()
+plt.savefig(r'/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/final/8e1dcb38-681d-4433-a65b-716a228a5823/top_10_product_categories_revenue.png')
+plt.close('all')
+print('Chart saved: top_10_product_categories_revenue.png')
+[OUTPUT]
+Chart saved: top_10_product_categories_revenue.png

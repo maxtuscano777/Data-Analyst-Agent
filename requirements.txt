@@ -1,8 +1,8 @@
 # ── Web Framework ─────────────────────────────────────────────────────────────
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
 websockets>=12.0
-python-multipart>=0.0.9
+python-multipart>=0.0.6
 
 # ── Agentic Framework ─────────────────────────────────────────────────────────
 langchain>=0.3.0
@@ -11,23 +11,20 @@ langchain-community>=0.3.0
 langchain-experimental>=0.3.0
 langgraph>=0.2.0
 
-# ── LLM Providers ─────────────────────────────────────────────────────────────
+# ── LLM / Cloud ───────────────────────────────────────────────────────────────
 google-cloud-aiplatform>=1.60.0
-huggingface-hub>=0.24.0
-transformers>=4.44.0
 
 # ── Data Science ──────────────────────────────────────────────────────────────
 pandas>=2.2.3
 numpy>=2.0.0
-scikit-learn>=1.5.2
+scikit-learn>=1.5.1
 matplotlib>=3.9.2
 seaborn>=0.13.2
 openpyxl>=3.1.4
 
 # ── Validation & Config ───────────────────────────────────────────────────────
 pydantic>=2.8.0
-python-dotenv>=1.0.1
+python-dotenv>=1.0.0
 
 # ── Database ──────────────────────────────────────────────────────────────────
 aiosqlite>=0.20.0
-sqlalchemy>=2.0.31

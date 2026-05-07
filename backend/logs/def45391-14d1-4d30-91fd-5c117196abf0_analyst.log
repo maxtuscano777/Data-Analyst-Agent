@@ -1,0 +1,140 @@
+[TOOL: python_repl_ast]
+import matplotlib
+matplotlib.use('Agg')
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.model_selection import cross_val_score
+from pathlib import Path
+import os, json
+
+os.makedirs(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/draft/def45391-14d1-4d30-91fd-5c117196abf0", exist_ok=True)
+df = pd.read_csv(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/def45391-14d1-4d30-91fd-5c117196abf0/cleaned_data.csv")
+print(f"Loaded {df.shape[0]} rows x {df.shape[1]} columns")
+print(df.dtypes.to_string())
+[OUTPUT]
+order_id                             str
+order_item_id                      int64
+product_id                           str
+seller_id                            str
+shipping_limit_date                  str
+price                            float64
+freight_value                    float64
+customer_id                          str
+order_status                         str
+order_purchase_timestamp             str
+order_approved_at                    str
+order_delivered_carrier_date         str
+order_delivered_customer_date        str
+order_estimated_delivery_date        str
+product_category_name                str
+product_name_lenght              float64
+product_description_lenght       float64
+product_photos_qty               float64
+product_weight_g                 float64
+product_length_cm                float64
+product_height_cm                float64
+product_width_cm                 float64
+total_revenue                    float64
+delivery_delay                       str
+
+
+[TOOL: python_repl_ast]
+top_10_categories = df.groupby('product_category_name')['total_revenue'].sum().nlargest(10)
+print('Top 10 Product Categories by Total Revenue:')
+print(top_10_categories)
+print('Step 1 done')
+[OUTPUT]
+Step 1 done
+
+
+[TOOL: python_repl_ast]
+top_10_categories = df.groupby('product_category_name')['total_revenue'].sum().nlargest(10)
+plt.figure(figsize=(12, 6))
+sns.barplot(x=top_10_categories.index, y=top_10_categories.values, hue=top_10_categories.index, palette='viridis', legend=False)
+plt.title('Top 10 Product Categories by Total Revenue')
+plt.xlabel('Product Category')
+plt.ylabel('Total Revenue')
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.savefig('/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/draft/def45391-14d1-4d30-91fd-5c117196abf0/top_revenue_categories.png')
+plt.close('all')
+print('Step 2 done')
+[OUTPUT]
+Step 2 done
+
+
+[TOOL: python_repl_ast]
+df['delivery_delay'] = pd.to_timedelta(df['delivery_delay'])
+df['delivery_delay'] = df['delivery_delay'].dt.days.astype(float)
+print('Step 3 done')
+[OUTPUT]
+Step 3 done
+
+
+[TOOL: python_repl_ast]
+mean_delay = df['delivery_delay'].mean()
+median_delay = df['delivery_delay'].median()
+std_delay = df['delivery_delay'].std()
+print(f'Mean delivery delay: {mean_delay:.2f} days')
+print(f'Median delivery delay: {median_delay:.2f} days')
+print(f'Standard deviation of delivery delay: {std_delay:.2f} days')
+print('Step 4 done')
+[OUTPUT]
+Step 4 done
+
+
+[TOOL: python_repl_ast]
+late_orders_percentage = (df['delivery_delay'] > 0).mean() * 100
+print(f'Percentage of late orders: {late_orders_percentage:.2f}%')
+print('Step 5 done')
+[OUTPUT]
+Step 5 done
+
+
+[TOOL: python_repl_ast]
+plt.figure(figsize=(10, 6))
+sns.histplot(df['delivery_delay'].dropna(), bins=30, kde=True, color='skyblue')
+plt.title('Distribution of Delivery Delay')
+plt.xlabel('Delivery Delay (days)')
+plt.ylabel('Frequency')
+plt.tight_layout()
+plt.savefig('/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/draft/def45391-14d1-4d30-91fd-5c117196abf0/delivery_delay_distribution.png')
+plt.close('all')
+print('Step 6 done')
+[OUTPUT]
+Step 6 done
+
+
+[TOOL: python_repl_ast]
+top_10_categories = df.groupby('product_category_name')['total_revenue'].sum().nlargest(10)
+mean_delay = df['delivery_delay'].mean()
+median_delay = df['delivery_delay'].median()
+std_delay = df['delivery_delay'].std()
+late_orders_percentage = (df['delivery_delay'] > 0).mean() * 100
+
+summary = {
+    "insights": [
+        f"The top product category by total revenue is {top_10_categories.index[0]} with a total revenue of ${top_10_categories.iloc[0]:,.2f}.",
+        f"The mean delivery delay is {mean_delay:.2f} days, with a median of {median_delay:.2f} days.",
+        f"The standard deviation of delivery delay is {std_delay:.2f} days, indicating a significant spread in delivery times.",
+        f"Approximately {late_orders_percentage:.2f}% of orders are delivered late (delivery_delay > 0 days)."
+    ],
+    "model_evaluations": []
+}
+print("---ANALYSIS_SUMMARY---\n" + json.dumps(summary, indent=2) + "\n---END_SUMMARY---")
+[OUTPUT]
+---ANALYSIS_SUMMARY---
+{
+  "insights": [
+    "The top product category by total revenue is beleza_saude with a total revenue of $1,441,248.07.",
+    "The mean delivery delay is -12.03 days, with a median of -13.00 days.",
+    "The standard deviation of delivery delay is 10.16 days, indicating a significant spread in delivery times.",
+    "Approximately 6.45% of orders are delivered late (delivery_delay > 0 days)."
+  ],
+  "model_evaluations": []
+}
+---END_SUMMARY---
