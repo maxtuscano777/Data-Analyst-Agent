@@ -1,0 +1,45 @@
+[TOOL: python_repl_ast]
+import pandas as pd
+olist_products_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/2f37a2c4-ecc1-4ffb-bd21-0489f0ec55f3/olist_products_dataset.csv")
+olist_orders_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/2f37a2c4-ecc1-4ffb-bd21-0489f0ec55f3/olist_orders_dataset.csv")
+olist_order_items_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/2f37a2c4-ecc1-4ffb-bd21-0489f0ec55f3/olist_order_items_dataset.csv")
+print("All files loaded.")
+[OUTPUT]
+All files loaded.
+
+
+[TOOL: python_repl_ast]
+df = pd.merge(olist_order_items_dataset, olist_products_dataset, on='product_id', how='left')
+df = pd.merge(df, olist_orders_dataset, on='order_id', how='left')
+print("Step 1 done")
+[OUTPUT]
+Step 1 done
+
+
+[TOOL: python_repl_ast]
+df.dropna(subset=['product_category_name'], inplace=True)
+print("Step 2 done")
+[OUTPUT]
+Step 2 done
+
+
+[TOOL: python_repl_ast]
+df['total_revenue'] = df['price'] + df['freight_value']
+print("Step 3 done")
+[OUTPUT]
+Step 3 done
+
+
+[TOOL: python_repl_ast]
+df.to_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/2f37a2c4-ecc1-4ffb-bd21-0489f0ec55f3/cleaned_data.csv", index=False)
+print("Saved.")
+[OUTPUT]
+OSError: Cannot save file into a non-existent directory: '/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/2f37a2c4-ecc1-4ffb-bd21-0489f0ec55f3'
+
+[TOOL: python_repl_ast]
+import os
+os.makedirs("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/2f37a2c4-ecc1-4ffb-bd21-0489f0ec55f3", exist_ok=True)
+df.to_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/2f37a2c4-ecc1-4ffb-bd21-0489f0ec55f3/cleaned_data.csv", index=False)
+print("Saved.")
+[OUTPUT]
+Saved.

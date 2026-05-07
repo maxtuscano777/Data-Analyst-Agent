@@ -1,0 +1,31 @@
+[TOOL: python_repl_ast]
+import pandas as pd
+olist_products_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/8559bcab-fc16-427c-965f-5993e6e53fea/olist_products_dataset.csv")
+olist_orders_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/8559bcab-fc16-427c-965f-5993e6e53fea/olist_orders_dataset.csv")
+olist_order_items_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/8559bcab-fc16-427c-965f-5993e6e53fea/olist_order_items_dataset.csv")
+print("All files loaded.")
+[OUTPUT]
+All files loaded.
+
+
+[TOOL: python_repl_ast]
+df = pd.merge(olist_order_items_dataset, olist_orders_dataset, on='order_id', how='inner')
+df = pd.merge(df, olist_products_dataset, on='product_id', how='left')
+print("Step 1 done")
+[OUTPUT]
+Step 1 done
+
+
+[TOOL: python_repl_ast]
+for col in ['order_purchase_timestamp', 'order_approved_at', 'order_delivered_carrier_date', 'order_delivered_customer_date', 'order_estimated_delivery_date', 'shipping_limit_date']:
+    df[col] = pd.to_datetime(df[col], errors='coerce')
+print("Step 2 done")
+[OUTPUT]
+Step 2 done
+
+
+[TOOL: python_repl_ast]
+df.to_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/8559bcab-fc16-427c-965f-5993e6e53fea/cleaned_data.csv", index=False)
+print("Saved.")
+[OUTPUT]
+Saved.

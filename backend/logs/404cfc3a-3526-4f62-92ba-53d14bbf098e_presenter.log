@@ -1,0 +1,78 @@
+[WARNING] No tool call on turn 1 — injecting reprompt (1/5).
+
+[TOOL: python_repl_ast]
+import matplotlib
+matplotlib.use('Agg')
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+import os
+
+sns.set_theme(style='whitegrid', palette='muted')
+os.makedirs(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/final/404cfc3a-3526-4f62-92ba-53d14bbf098e", exist_ok=True)
+df = pd.read_csv(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/404cfc3a-3526-4f62-92ba-53d14bbf098e/cleaned_data.csv")
+print(f"Loaded {df.shape[0]} rows x {df.shape[1]} columns")
+[OUTPUT]
+Loaded 111047 rows x 24 columns
+
+
+[TOOL: python_repl_ast]
+
+df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
+df['order_delivered_customer_date'] = pd.to_datetime(df['order_delivered_customer_date'])
+
+df['delivery_time_days'] = (df['order_delivered_customer_date'] - df['order_purchase_timestamp']).dt.days
+
+# Filter out orders that were not delivered or have invalid delivery times (e.g., negative)
+delivery_times = df['delivery_time_days'].dropna()
+delivery_times = delivery_times[delivery_times >= 0]
+
+median_delivery_time = delivery_times.median()
+
+plt.figure(figsize=(12, 7))
+sns.histplot(delivery_times, bins=50, kde=True, color='skyblue')
+plt.axvline(median_delivery_time, color='red', linestyle='--', label=f'Median Delivery Time: {median_delivery_time:.2f} days')
+plt.title('Distribution of Order Delivery Times', fontsize=16)
+plt.xlabel('Delivery Time (Days)', fontsize=12)
+plt.ylabel('Number of Orders', fontsize=12)
+plt.legend()
+plt.grid(True, linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.savefig(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/final/404cfc3a-3526-4f62-92ba-53d14bbf098e/delivery_time_distribution.png")
+plt.close('all')
+print("Saved delivery_time_distribution.png")
+
+[OUTPUT]
+Saved delivery_time_distribution.png
+
+
+[TOOL: python_repl_ast]
+
+df['total_revenue'] = df['price'] + df['freight_value']
+
+category_revenue = df.groupby('product_category_name')['total_revenue'].sum().reset_index()
+category_revenue = category_revenue.sort_values(by='total_revenue', ascending=False)
+
+top_10_categories = category_revenue.head(10)
+
+plt.figure(figsize=(14, 8))
+sns.barplot(x='total_revenue', y='product_category_name', data=top_10_categories, hue='product_category_name', palette='muted', legend=False)
+
+plt.title('Top 10 Product Categories by Total Revenue', fontsize=16)
+plt.xlabel('Total Revenue', fontsize=12)
+plt.ylabel('Product Category', fontsize=12)
+
+# Add annotations to the bars
+for index, row in top_10_categories.iterrows():
+    plt.text(row['total_revenue'], index, f'{row['total_revenue']:.2f}', color='black', ha="left", va="center")
+
+plt.grid(axis='x', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.savefig(r"/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/charts/final/404cfc3a-3526-4f62-92ba-53d14bbf098e/top_10_product_categories_revenue.png")
+plt.close('all')
+print("Saved top_10_product_categories_revenue.png")
+
+[OUTPUT]
+Saved top_10_product_categories_revenue.png

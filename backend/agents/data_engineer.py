@@ -22,6 +22,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_experimental.tools import PythonAstREPLTool
 from langchain_google_vertexai import ChatVertexAI
 
+from backend.config import GCP_LOCATION, GCP_PROJECT
 from backend.schemas.output_schemas import AgentState, CleaningResult
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
@@ -205,8 +206,8 @@ def data_engineer_node(state: AgentState, config: RunnableConfig = None) -> dict
     repl = PythonAstREPLTool()
     llm = ChatVertexAI(
         model=llm_model,
-        project="advisorai-62611",
-        location="us-central1",
+        project=GCP_PROJECT,
+        location=GCP_LOCATION,
         temperature=0,
         max_retries=10,
     )

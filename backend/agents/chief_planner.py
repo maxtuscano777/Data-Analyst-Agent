@@ -21,6 +21,7 @@ from pathlib import Path
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_vertexai import ChatVertexAI
 
+from backend.config import GCP_LOCATION, GCP_PROJECT
 from backend.schemas.output_schemas import AgentState, ExecutionPlan
 
 # ── System prompt ──────────────────────────────────────────────────────────────
@@ -212,8 +213,8 @@ def chief_planner_node(state: AgentState) -> dict:
 
     llm = ChatVertexAI(
         model=llm_model,
-        project="advisorai-62611",
-        location="us-central1",
+        project=GCP_PROJECT,
+        location=GCP_LOCATION,
         temperature=0,       # deterministic — plans should be stable
         max_retries=10,
     )

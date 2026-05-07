@@ -1,0 +1,48 @@
+[TOOL: python_repl_ast]
+
+import pandas as pd
+olist_products_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/9904aa05-5f5d-479a-981b-f67c7c447d95/olist_products_dataset.csv")
+olist_orders_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/9904aa05-5f5d-479a-981b-f67c7c447d95/olist_orders_dataset.csv")
+olist_order_items_dataset = pd.read_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/raw/9904aa05-5f5d-479a-981b-f67c7c447d95/olist_order_items_dataset.csv")
+print("All files loaded.")
+
+[OUTPUT]
+All files loaded.
+
+
+[TOOL: python_repl_ast]
+df = pd.merge(olist_order_items_dataset, olist_products_dataset, on='product_id', how='inner')
+print(f"Row count of df: {len(df)}")
+print("Step 1 done")
+[OUTPUT]
+Step 1 done
+
+
+[TOOL: python_repl_ast]
+df.dropna(subset=['product_category_name'], inplace=True)
+print("Step 2 done")
+[OUTPUT]
+Step 2 done
+
+
+[TOOL: python_repl_ast]
+df['total_revenue'] = df['price'] + df['freight_value']
+print("Step 3 done")
+[OUTPUT]
+Step 3 done
+
+
+[TOOL: python_repl_ast]
+df.to_csv("/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/9904aa05-5f5d-479a-981b-f67c7c447d95/cleaned_data.csv", index=False)
+print("Saved.")
+[OUTPUT]
+OSError: Cannot save file into a non-existent directory: '/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/9904aa05-5f5d-479a-981b-f67c7c447d95'
+
+[TOOL: python_repl_ast]
+import os
+output_dir = "/Users/parasjadhav/Desktop/StevensAcademics/Sem_4/GenAI/Project/Data-Analyst-Agent/backend/uploads/cleaned/9904aa05-5f5d-479a-981b-f67c7c447d95"
+os.makedirs(output_dir, exist_ok=True)
+df.to_csv(os.path.join(output_dir, "cleaned_data.csv"), index=False)
+print("Saved.")
+[OUTPUT]
+Saved.
