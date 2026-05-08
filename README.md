@@ -256,8 +256,3 @@ Open `http://localhost:5173` in your browser. The Vite dev server proxies all
 | Data Science | pandas 2.3, numpy 2.4, scikit-learn 1.5, matplotlib 3.9, seaborn 0.13 |
 | Database | SQLite via `aiosqlite` |
 
----
-
-## License
-
-This project was developed for academic purposes at Stevens Institute of Technology.
